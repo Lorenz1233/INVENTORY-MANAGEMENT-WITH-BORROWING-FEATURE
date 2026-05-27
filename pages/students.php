@@ -9,6 +9,7 @@ $studentRows = all_rows(
                 WHEN c.course_name IS NULL OR c.course_name = m.course_code THEN m.course_code
                 ELSE CONCAT(m.course_code, " - ", c.course_name)
             END AS group_name,
+            "student" AS account_role,
             m.year_level, "student" AS user_type
      FROM master_list m
      LEFT JOIN course c ON c.course_code = m.course_code
@@ -16,14 +17,18 @@ $studentRows = all_rows(
 );
 $facultyRows = all_rows(
     'SELECT o.official_id AS id_number, o.first_name, o.last_name, COALESCE(p.position_code, o.position_code) AS group_code,
-            COALESCE(p.position_name, o.position_code) AS group_name, NULL AS year_level, "faculty" AS user_type
+            COALESCE(p.position_name, o.position_code) AS group_name,
+            COALESCE(u.role, "faculty") AS account_role,
+            NULL AS year_level, "faculty" AS user_type
      FROM officials_masterlist o
      LEFT JOIN positions p ON p.position_code = o.position_code
+     LEFT JOIN users u ON u.official_id = o.official_id
      ORDER BY o.last_name, o.first_name'
 );
 $masterRows = array_merge($studentRows, $facultyRows);
 $courseRows = all_rows('SELECT * FROM course ORDER BY course_code');
 $positionRows = all_rows('SELECT * FROM positions ORDER BY position_name, position_code');
+$studentYearLevelOptions = ['First', 'Second', 'Third', 'Fourth', 'Junior High School 1', 'Junior High School 2', 'Junior High School 3', 'Junior High School 4'];
 ?>
 <!doctype html>
 <html lang="en">
@@ -85,10 +90,16 @@ $positionRows = all_rows('SELECT * FROM positions ORDER BY position_name, positi
       <div class="px-6 py-4 flex flex-wrap items-center gap-4">
         <button data-sidebar-toggle class="md:hidden inline-flex items-center justify-center w-9 h-9 rounded-md border border-gray-200 text-navy">☰</button>
         <div class="min-w-0">
-          <h1 class="text-lg font-semibold text-navy leading-tight whitespace-nowrap">Student Masterlist</h1>
-          <p class="text-xs text-gray-500">Registered students directory</p>
+          <h1 class="text-lg font-semibold text-navy leading-tight whitespace-nowrap">Masterlist</h1>
+          <p class="text-xs text-gray-500">Registered students and officials directory</p>
         </div>
-        <div class="ml-auto flex items-center gap-2 flex-wrap justify-end"><input class="input max-w-xs" placeholder="Search students..." data-search-target="#studentsTable" /><button class="btn btn-primary btn-sm" data-modal-open="addStudentModal">+ Add Student</button></div>
+        <div class="ml-auto flex items-center gap-2 flex-wrap justify-end">
+          <input class="input max-w-xs" placeholder="Search masterlist..." data-search-target="#studentsTable" />
+          <button type="button" class="btn btn-primary btn-sm" data-modal-open="addStudentModal" data-master-create="student">+ Add Student</button>
+          <?php if ($canManageUserRoles): ?>
+          <button type="button" class="btn btn-outline btn-sm" data-modal-open="addStudentModal" data-master-create="faculty">+ Add Official</button>
+          <?php endif; ?>
+        </div>
       </div>
     </header>
 
@@ -105,12 +116,16 @@ $positionRows = all_rows('SELECT * FROM positions ORDER BY position_name, positi
                 <tr><td colspan="5"><div class="empty"><div class="icon">-</div><p class="font-medium text-gray-700">No records yet</p><p class="text-sm">Add students/faculty or import from CSV.</p></div></td></tr>
               <?php else: foreach ($masterRows as $person):
                 $fullName = trim($person['first_name'] . ' ' . $person['last_name']);
+                $accountRole = $person['account_role'] ?? ($person['user_type'] === 'faculty' ? 'faculty' : 'student');
+                $typeText = $person['user_type'] === 'faculty'
+                    ? ($accountRole === 'admin' ? 'Official / Administrator' : 'Official / Staff')
+                    : ($person['year_level'] ?: '-');
               ?>
                 <tr data-searchable>
                   <td><?php echo h($person['id_number']); ?></td>
                   <td><?php echo h($fullName); ?></td>
                   <td><?php echo h($person['group_name'] ?: '-'); ?></td>
-                  <td><?php echo h($person['user_type'] === 'faculty' ? 'Faculty' : ($person['year_level'] ?: '-')); ?></td>
+                  <td><?php echo h($typeText); ?></td>
                   <td class="text-right space-x-2">
                     <button type="button" class="text-blue-600 hover:text-blue-800 text-xs font-medium"
                       data-modal-open="addStudentModal"
@@ -119,6 +134,7 @@ $positionRows = all_rows('SELECT * FROM positions ORDER BY position_name, positi
                       data-type="<?php echo h($person['user_type']); ?>"
                       data-name="<?php echo h($fullName); ?>"
                       data-group-code="<?php echo h($person['group_code']); ?>"
+                      data-account-role="<?php echo h($accountRole); ?>"
                       data-year="<?php echo h($person['year_level']); ?>">Edit</button>
                     <form method="POST" action="../process/masterlist.php" class="inline" onsubmit="return confirm('Delete this masterlist record?');">
                       <input type="hidden" name="action" value="delete" />
@@ -143,12 +159,13 @@ $positionRows = all_rows('SELECT * FROM positions ORDER BY position_name, positi
         <div class="card-header"><h3 class="font-semibold text-navy">Add Student</h3>
           <button data-modal-close class="text-gray-400 hover:text-gray-700">✕</button></div>
         <form method="POST" action="../process/masterlist.php" class="card-body grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div><label class="label">ID number</label><input class="input" name="student_id" required /></div>
+          <input type="hidden" name="action" value="save" />
+          <div><label class="label" data-id-label>Student ID number</label><input class="input" name="student_id" required /></div>
           <div><label class="label">User type</label>
             <select class="select" name="user_type">
               <option value="student">Student / Borrower</option>
               <?php if ($canManageUserRoles): ?>
-              <option value="faculty">Faculty</option>
+              <option value="faculty">Official</option>
               <?php endif; ?>
             </select>
           </div>
@@ -161,7 +178,7 @@ $positionRows = all_rows('SELECT * FROM positions ORDER BY position_name, positi
               <?php endforeach; ?>
             </select>
           </div>
-          <div data-faculty-field class="hidden"><label class="label">Faculty Position</label>
+          <div data-faculty-field class="hidden"><label class="label">Official Position</label>
             <select class="select" name="position_code">
               <option value="">Select position</option>
               <?php foreach ($positionRows as $position): ?>
@@ -169,10 +186,25 @@ $positionRows = all_rows('SELECT * FROM positions ORDER BY position_name, positi
               <?php endforeach; ?>
             </select>
           </div>
-          <div data-student-field><label class="label">Year level</label><input class="input" name="year_level" /></div>
+          <?php if ($canManageUserRoles): ?>
+          <div data-faculty-field class="hidden"><label class="label">System Role</label>
+            <select class="select" name="official_role">
+              <option value="Staff">Staff</option>
+              <option value="Administrator">Administrator</option>
+            </select>
+          </div>
+          <?php endif; ?>
+          <div data-student-field><label class="label">Year level</label>
+            <select class="select" name="year_level">
+              <option value="">Select year level</option>
+              <?php foreach ($studentYearLevelOptions as $yearOption): ?>
+                <option value="<?php echo h($yearOption); ?>"><?php echo h($yearOption); ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
           <div class="md:col-span-2 flex justify-end gap-2">
             <button type="button" class="btn btn-outline" data-modal-close>Cancel</button>
-            <button type="submit" class="btn btn-primary">Save Student</button>
+            <button type="submit" class="btn btn-primary" data-master-submit>Save Student</button>
           </div>
         </form>
       </div>
@@ -181,6 +213,30 @@ $positionRows = all_rows('SELECT * FROM positions ORDER BY position_name, positi
   </div>
   <script src="../js/shared.js"></script>
   <script>
+    function setMasterlistLabels(form, isEdit) {
+      var isFaculty = form.elements.user_type.value === 'faculty';
+      var title = document.querySelector('#addStudentModal h3');
+      var idLabel = form.querySelector('[data-id-label]');
+      var submit = form.querySelector('[data-master-submit]');
+
+      title.textContent = isEdit
+        ? (isFaculty ? 'Edit Official' : 'Edit Student')
+        : (isFaculty ? 'Add Official' : 'Add Student');
+      idLabel.textContent = isFaculty ? 'Official ID number' : 'Student ID number';
+      submit.textContent = isEdit ? 'Save Changes' : (isFaculty ? 'Save Official' : 'Save Student');
+    }
+
+    function ensureSelectOption(select, value) {
+      if (!value || Array.prototype.some.call(select.options, function (option) { return option.value === value; })) {
+        return;
+      }
+
+      var option = document.createElement('option');
+      option.value = value;
+      option.textContent = value;
+      select.appendChild(option);
+    }
+
     function syncMasterlistFields(form) {
       var isFaculty = form.elements.user_type.value === 'faculty';
       form.querySelectorAll('[data-student-field]').forEach(function (field) {
@@ -194,34 +250,49 @@ $positionRows = all_rows('SELECT * FROM positions ORDER BY position_name, positi
       form.elements.year_level.disabled = isFaculty;
       form.elements.position_code.disabled = !isFaculty;
       form.elements.position_code.required = isFaculty;
+      if (form.elements.official_role) {
+        form.elements.official_role.disabled = !isFaculty;
+        form.elements.official_role.required = isFaculty;
+      }
     }
 
     document.querySelector('#addStudentModal form').elements.user_type.addEventListener('change', function () {
       syncMasterlistFields(this.form);
+      setMasterlistLabels(this.form, this.form.dataset.editMode === '1');
     });
 
     document.querySelectorAll('[data-edit-master]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var form = document.querySelector('#addStudentModal form');
-        document.querySelector('#addStudentModal h3').textContent = 'Edit Masterlist Record';
+        form.dataset.editMode = '1';
         form.elements.student_id.value = btn.dataset.id || '';
         form.elements.user_type.value = btn.dataset.type || 'student';
         form.elements.full_name.value = btn.dataset.name || '';
         form.elements.course_code.value = btn.dataset.type === 'student' ? (btn.dataset.groupCode || '') : '';
         form.elements.position_code.value = btn.dataset.type === 'faculty' ? (btn.dataset.groupCode || '') : '';
+        if (form.elements.official_role) {
+          form.elements.official_role.value = btn.dataset.accountRole === 'admin' ? 'Administrator' : 'Staff';
+        }
+        ensureSelectOption(form.elements.year_level, btn.dataset.year || '');
         form.elements.year_level.value = btn.dataset.year || '';
         syncMasterlistFields(form);
+        setMasterlistLabels(form, true);
       });
     });
-    document.querySelectorAll('[data-modal-open="addStudentModal"]:not([data-edit-master])').forEach(function (btn) {
+    document.querySelectorAll('[data-master-create]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var form = document.querySelector('#addStudentModal form');
-        document.querySelector('#addStudentModal h3').textContent = 'Add Masterlist Record';
+        form.dataset.editMode = '0';
         form.reset();
+        form.elements.user_type.value = btn.dataset.masterCreate || 'student';
         syncMasterlistFields(form);
+        setMasterlistLabels(form, false);
       });
     });
-    syncMasterlistFields(document.querySelector('#addStudentModal form'));
+    var masterlistForm = document.querySelector('#addStudentModal form');
+    masterlistForm.dataset.editMode = '0';
+    syncMasterlistFields(masterlistForm);
+    setMasterlistLabels(masterlistForm, false);
   </script>
 </body>
 </html>

@@ -13,6 +13,10 @@ $fullName = post_value('full_name');
 $departmentOrCourse = post_value('department') ?: post_value('course');
 $courseCodeInput = post_value('course_code') ?: post_value('course');
 $positionCodeInput = post_value('position_code') ?: post_value('department');
+$officialRole = db_role(post_value('official_role', 'faculty'));
+if ($officialRole === 'student') {
+    $officialRole = 'faculty';
+}
 $yearLevel = normalized_year(post_value('year_level'));
 
 if ($fullName !== '' && ($firstName === '' || $lastName === '')) {
@@ -76,13 +80,13 @@ try {
 
     if ($userType === 'faculty') {
         $positionCode = require_existing_position_code($pdo, $positionCodeInput, $departmentOrCourse);
-        $userId = ensure_user_for_official($pdo, $idNumber, $firstName, $lastName, $positionCode, null, 'faculty', 1);
+        $userId = ensure_user_for_official($pdo, $idNumber, $firstName, $lastName, $positionCode, null, $officialRole, 1);
         log_audit(
             $pdo,
             'masterlist_save',
             'officials_masterlist',
             $idNumber,
-            ['user_type' => 'faculty', 'user_id' => $userId]
+            ['user_type' => 'faculty', 'role' => $officialRole, 'user_id' => $userId]
         );
         $pdo->commit();
         respond_success('../pages/students.php', 'faculty_saved');

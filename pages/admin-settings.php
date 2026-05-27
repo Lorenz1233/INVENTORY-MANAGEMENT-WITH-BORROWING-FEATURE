@@ -1,6 +1,49 @@
 <?php
 require_once __DIR__ . '/../partials/page-data.php';
 require_admin();
+
+function settings_audit_action_label($action)
+{
+    return ucwords(str_replace('_', ' ', clean($action)));
+}
+
+function settings_audit_detail_text($details)
+{
+    $details = trim((string) ($details ?? ''));
+    if ($details === '') {
+        return '';
+    }
+
+    $decoded = json_decode($details, true);
+    if (!is_array($decoded)) {
+        return substr($details, 0, 160);
+    }
+
+    $parts = [];
+    foreach ($decoded as $key => $value) {
+        if (is_array($value)) {
+            $value = count($value) . ' item(s)';
+        } elseif (is_bool($value)) {
+            $value = $value ? 'yes' : 'no';
+        } elseif ($value === null || $value === '') {
+            $value = 'none';
+        } else {
+            $value = (string) $value;
+        }
+
+        if (strlen($value) > 60) {
+            $value = substr($value, 0, 57) . '...';
+        }
+
+        $parts[] = str_replace('_', ' ', (string) $key) . ': ' . $value;
+        if (count($parts) >= 4) {
+            break;
+        }
+    }
+
+    return implode('; ', $parts);
+}
+
 $categoryRows = all_rows('SELECT * FROM category ORDER BY category_name');
 $unitRows = all_rows('SELECT * FROM unit ORDER BY unit_name');
 $positionRows = all_rows('SELECT * FROM positions ORDER BY position_name, position_code');
@@ -17,9 +60,117 @@ $settingsUsers = all_rows(
 $settingsOfficials = array_values(array_filter($settingsUsers, function ($user) {
     return in_array($user['role'], ['admin', 'faculty'], true);
 }));
-$settingsBorrowers = array_values(array_filter($settingsUsers, function ($user) {
-    return $user['role'] === 'student' && (int) $user['is_active'] === 1;
+$settingsRoleCandidates = array_values(array_filter($settingsUsers, function ($user) {
+    return (int) $user['is_active'] === 1;
 }));
+$systemNotesRow = all_rows(
+    'SELECT s.*,
+            COALESCE(NULLIF(TRIM(CONCAT(COALESCE(m.first_name, ""), " ", COALESCE(m.last_name, ""))), ""),
+                     NULLIF(TRIM(CONCAT(COALESCE(o.first_name, ""), " ", COALESCE(o.last_name, ""))), ""),
+                     u.username) AS updated_by_name
+     FROM system_settings s
+     LEFT JOIN users u ON u.user_id = s.updated_by
+     LEFT JOIN master_list m ON m.student_id = u.student_id
+     LEFT JOIN officials_masterlist o ON o.official_id = u.official_id
+     WHERE s.setting_key = "system_notes"
+     LIMIT 1'
+)[0] ?? null;
+$systemNotes = $systemNotesRow['setting_value'] ?? '';
+$auditRows = all_rows(
+    'SELECT a.*,
+            COALESCE(NULLIF(TRIM(CONCAT(COALESCE(m.first_name, ""), " ", COALESCE(m.last_name, ""))), ""),
+                     NULLIF(TRIM(CONCAT(COALESCE(o.first_name, ""), " ", COALESCE(o.last_name, ""))), ""),
+                     u.username,
+                     "System") AS actor_name,
+            u.username AS actor_username
+     FROM audit_log a
+     LEFT JOIN users u ON u.user_id = a.actor_user_id
+     LEFT JOIN master_list m ON m.student_id = u.student_id
+     LEFT JOIN officials_masterlist o ON o.official_id = u.official_id
+     ORDER BY a.created_at DESC, a.audit_id DESC
+     LIMIT 15'
+);
+$csvImportFormats = [
+    'students' => [
+        'label' => 'Students',
+        'summary' => 'Use one row per student borrower.',
+        'required' => 'student_id plus first_name and last_name. You may use full_name or name instead of separate name columns.',
+        'headers' => ['student_id', 'first_name', 'last_name', 'course', 'year_level'],
+        'example' => ['20240001', 'Ana', 'Santos', 'BSIT', 'First'],
+        'download' => '../assets/samples/students-import-example.csv',
+        'notes' => ['student_id must be a positive number.', 'year_level accepts First, Second, Third, Fourth, or Junior High School 1-4.'],
+    ],
+    'faculty' => [
+        'label' => 'Faculty',
+        'summary' => 'Use one row per official staff or faculty account.',
+        'required' => 'official_id plus first_name and last_name. You may use full_name or name instead of separate name columns.',
+        'headers' => ['official_id', 'first_name', 'last_name', 'department'],
+        'example' => ['FAC-1001', 'Liza', 'Cruz', 'Faculty'],
+        'download' => '../assets/samples/faculty-import-example.csv',
+        'notes' => ['department is used as the position/department reference.', 'Only administrators can import faculty.'],
+    ],
+    'masterlist' => [
+        'label' => 'Mixed Masterlist',
+        'summary' => 'Use this when one CSV contains both students and faculty.',
+        'required' => 'user_type, id_number, and name columns. user_type must be student or faculty.',
+        'headers' => ['user_type', 'id_number', 'first_name', 'last_name', 'department', 'year_level'],
+        'example' => ['student', '20240003', 'Camille', 'Garcia', 'BSIT', 'Junior High School 1'],
+        'download' => '../assets/samples/masterlist-import-example.csv',
+        'notes' => ['Use department for student course or faculty position.', 'Only administrators can import mixed masterlists.'],
+    ],
+    'equipment' => [
+        'label' => 'Equipment',
+        'summary' => 'Use one row per item or equipment record.',
+        'required' => 'item_name, equipment_name, or name, plus quantity or qty.',
+        'headers' => ['item_name', 'item_code', 'category', 'unit', 'quantity', 'condition', 'description', 'date_added'],
+        'example' => ['Digital Multimeter', 'EQ-1001', 'Electronics', 'pcs', '12', 'Good', 'Handheld meter for lab use', '2026-05-27'],
+        'download' => '../assets/samples/equipment-import-example.csv',
+        'extra_downloads' => [
+            ['label' => 'Download items example', 'href' => '../assets/samples/items-import-example.csv'],
+            ['label' => 'Download equipments example', 'href' => '../assets/samples/equipments-import-example.csv'],
+        ],
+        'notes' => ['quantity must be a whole number.', 'date_added must use YYYY-MM-DD when provided.'],
+    ],
+    'materials' => [
+        'label' => 'Materials',
+        'summary' => 'Use one row per campus material or supply.',
+        'required' => 'material_name or item_name, plus quantity.',
+        'headers' => ['material_name', 'category', 'unit', 'quantity', 'unit_price', 'description', 'date_added'],
+        'example' => ['Bond Paper A4', 'Office Supplies', 'ream', '20', '245.00', 'White copy paper', '2026-05-27'],
+        'download' => '../assets/samples/materials-import-example.csv',
+        'notes' => ['unit_price accepts up to two decimal places.', 'date_added must use YYYY-MM-DD when provided.'],
+    ],
+];
+
+$availableCsvImportFormats = $csvImportFormats;
+if (!$canManageUserRoles) {
+    unset($availableCsvImportFormats['faculty'], $availableCsvImportFormats['masterlist']);
+}
+reset($availableCsvImportFormats);
+$firstCsvFormatKey = key($availableCsvImportFormats);
+$settingsErrorCode = $_GET['error'] ?? '';
+$settingsErrorSection = $_GET['section'] ?? '';
+$settingsErrorMessages = [
+    'csv_import_failed' => $_GET['reason'] ?? 'The CSV file could not be imported. Check that the headers match the selected dataset.',
+    'dataset' => 'Invalid import dataset.',
+    'not_allowed' => 'You are not allowed to perform that settings action.',
+    'upload_failed' => 'CSV upload failed. Please choose the file again.',
+    'file_type' => 'Only CSV files are accepted.',
+    'missing' => 'User and role are required.',
+    'notes_too_long' => 'System notes must be 5000 characters or fewer.',
+    'invalid_action' => 'The submitted settings action was not recognized.',
+    'settings_failed' => 'The settings request could not be completed.',
+];
+$settingsError = '';
+if ($settingsErrorCode !== '') {
+    $settingsError = $settingsErrorMessages[$settingsErrorCode] ?? 'The settings request could not be completed.';
+}
+$csvErrorCodes = ['csv_import_failed', 'dataset', 'upload_failed', 'file_type'];
+$roleErrorCodes = ['missing', 'not_allowed', 'invalid_action', 'settings_failed'];
+$notesErrorCodes = ['notes_too_long', 'not_allowed', 'settings_failed'];
+$csvSettingsError = $settingsError !== '' && ($settingsErrorSection === 'csv' || ($settingsErrorSection === '' && in_array($settingsErrorCode, $csvErrorCodes, true)));
+$roleSettingsError = $settingsError !== '' && ($settingsErrorSection === 'roles' || ($settingsErrorSection === '' && in_array($settingsErrorCode, $roleErrorCodes, true)));
+$noteSettingsError = $settingsError !== '' && ($settingsErrorSection === 'notes' || ($settingsErrorSection === '' && in_array($settingsErrorCode, $notesErrorCodes, true)));
 $importSummary = isset($_GET['success']) && $_GET['success'] === 'imported'
     ? sprintf(
         'Import complete: %d total, %d successful, %d failed.',
@@ -27,6 +178,12 @@ $importSummary = isset($_GET['success']) && $_GET['success'] === 'imported'
         (int) ($_GET['count'] ?? 0),
         (int) ($_GET['failed'] ?? 0)
     )
+    : '';
+$roleUpdateSummary = isset($_GET['success']) && $_GET['success'] === 'role_updated'
+    ? 'Role authorization updated successfully.'
+    : '';
+$notesUpdateSummary = isset($_GET['success']) && $_GET['success'] === 'notes_saved'
+    ? 'System notes saved successfully.'
     : '';
 ?>
 <!doctype html>
@@ -101,20 +258,20 @@ $importSummary = isset($_GET['success']) && $_GET['success'] === 'imported'
         <div class="card-header"><h2 class="font-semibold text-navy">CSV Import</h2></div>
         <div class="card-body space-y-3">
           <p class="text-sm text-gray-600">Import students, equipment, or materials from CSV files.</p>
+          <?php if ($csvSettingsError): ?>
+            <p class="text-sm rounded-md border border-red-200 bg-red-50 text-red-700 px-3 py-2"><?php echo h($settingsError); ?></p>
+          <?php endif; ?>
           <?php if ($importSummary): ?>
             <p class="text-sm rounded-md border border-green-200 bg-green-50 text-green-700 px-3 py-2"><?php echo h($importSummary); ?></p>
           <?php endif; ?>
           <form method="POST" action="../process/admin_settings.php" enctype="multipart/form-data" class="space-y-3">
+            <input type="hidden" name="settings_action" value="import_csv" />
             <div>
               <label class="label">Target dataset</label>
-              <select class="select" name="dataset">
-                <option value="students">Students</option>
-                <?php if ($canManageUserRoles): ?>
-                <option value="faculty">Faculty</option>
-                <option value="masterlist">Mixed Masterlist</option>
-                <?php endif; ?>
-                <option value="equipment">Equipment</option>
-                <option value="materials">Materials</option>
+              <select class="select" name="dataset" id="csvDatasetSelect">
+                <?php foreach ($availableCsvImportFormats as $datasetKey => $format): ?>
+                  <option value="<?php echo h($datasetKey); ?>"><?php echo h($format['label']); ?></option>
+                <?php endforeach; ?>
               </select>
             </div>
             <div>
@@ -128,6 +285,47 @@ $importSummary = isset($_GET['success']) && $_GET['success'] === 'imported'
               <label class="label">CSV file</label>
               <input class="input" type="file" name="csv_file" accept=".csv" />
             </div>
+            <div class="rounded-md border border-gray-200 bg-gray-50 p-3 space-y-3">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <p class="text-sm font-semibold text-navy">CSV format</p>
+                  <p class="text-xs text-gray-500">Match the selected dataset before uploading.</p>
+                </div>
+              </div>
+              <?php foreach ($availableCsvImportFormats as $datasetKey => $format): ?>
+                <div class="csv-format-panel space-y-3 <?php echo $datasetKey === $firstCsvFormatKey ? '' : 'hidden'; ?>" data-csv-format="<?php echo h($datasetKey); ?>">
+                  <p class="text-sm text-gray-600"><?php echo h($format['summary']); ?></p>
+                  <p class="text-xs text-gray-500"><span class="font-semibold text-gray-700">Required:</span> <?php echo h($format['required']); ?></p>
+                  <div class="overflow-x-auto">
+                    <table class="table text-xs bg-white">
+                      <thead>
+                        <tr>
+                          <?php foreach ($format['headers'] as $header): ?>
+                            <th><?php echo h($header); ?></th>
+                          <?php endforeach; ?>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <?php foreach ($format['example'] as $value): ?>
+                            <td><?php echo h($value); ?></td>
+                          <?php endforeach; ?>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <a class="btn btn-outline btn-sm" href="<?php echo h($format['download']); ?>" download>Download example CSV</a>
+                    <?php foreach (($format['extra_downloads'] ?? []) as $download): ?>
+                      <a class="btn btn-outline btn-sm" href="<?php echo h($download['href']); ?>" download><?php echo h($download['label']); ?></a>
+                    <?php endforeach; ?>
+                    <?php foreach ($format['notes'] as $note): ?>
+                      <span class="text-xs text-gray-500"><?php echo h($note); ?></span>
+                    <?php endforeach; ?>
+                  </div>
+                </div>
+              <?php endforeach; ?>
+            </div>
             <button class="btn btn-primary">Upload CSV</button>
           </form>
         </div>
@@ -135,9 +333,30 @@ $importSummary = isset($_GET['success']) && $_GET['success'] === 'imported'
 
       <section class="card">
         <div class="card-header"><h2 class="font-semibold text-navy">System Notes</h2></div>
-        <div class="card-body text-sm text-gray-600 space-y-2">
-          <p>Use this area for school-specific notes, contact information for the IT office, or instructions for staff.</p>
-          <p class="text-gray-400"><!-- PHP: render notes from DB -->No notes yet.</p>
+        <div class="card-body text-sm text-gray-600 space-y-3">
+          <?php if ($noteSettingsError): ?>
+            <p class="text-sm rounded-md border border-red-200 bg-red-50 text-red-700 px-3 py-2"><?php echo h($settingsError); ?></p>
+          <?php endif; ?>
+          <?php if ($notesUpdateSummary): ?>
+            <p class="text-sm rounded-md border border-green-200 bg-green-50 text-green-700 px-3 py-2"><?php echo h($notesUpdateSummary); ?></p>
+          <?php endif; ?>
+          <?php if ($systemNotesRow): ?>
+            <p class="text-xs text-gray-500">
+              Last updated by <?php echo h($systemNotesRow['updated_by_name'] ?: 'System'); ?>
+              on <?php echo h(substr($systemNotesRow['updated_at'], 0, 16)); ?>
+            </p>
+          <?php endif; ?>
+          <?php if ($canManageUserRoles): ?>
+            <form method="POST" action="../process/admin_settings.php" class="space-y-3">
+              <input type="hidden" name="settings_action" value="save_notes" />
+              <textarea class="input min-h-[9rem]" name="system_notes" maxlength="5000" placeholder="School-specific notes, IT contact details, or staff instructions"><?php echo h($systemNotes); ?></textarea>
+              <div class="flex justify-end">
+                <button class="btn btn-primary btn-sm">Save Notes</button>
+              </div>
+            </form>
+          <?php else: ?>
+            <div class="rounded-md border border-gray-200 bg-gray-50 p-3 whitespace-pre-wrap"><?php echo h($systemNotes !== '' ? $systemNotes : 'No system notes saved yet.'); ?></div>
+          <?php endif; ?>
         </div>
       </section>
 
@@ -210,6 +429,12 @@ $importSummary = isset($_GET['success']) && $_GET['success'] === 'imported'
         <div class="card-header"><h2 class="font-semibold text-navy">Official Role Authorization</h2></div>
         <div class="card-body space-y-4">
           <p class="text-sm text-gray-600">Manage authorization and revocation of official (staff/admin) roles. Use this section to grant or revoke elevated permissions to system users.</p>
+          <?php if ($roleSettingsError): ?>
+            <p class="text-sm rounded-md border border-red-200 bg-red-50 text-red-700 px-3 py-2"><?php echo h($settingsError); ?></p>
+          <?php endif; ?>
+          <?php if ($roleUpdateSummary): ?>
+            <p class="text-sm rounded-md border border-green-200 bg-green-50 text-green-700 px-3 py-2"><?php echo h($roleUpdateSummary); ?></p>
+          <?php endif; ?>
           <div class="overflow-x-auto">
             <table class="table text-sm">
               <thead><tr><th>Username</th><th>Full Name</th><th>Current Role</th><th>Status</th><th class="text-right">Actions</th></tr></thead>
@@ -226,8 +451,9 @@ $importSummary = isset($_GET['success']) && $_GET['success'] === 'imported'
                   <td><span class="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded"><?php echo h($roleLabel); ?></span></td>
                   <td><?php echo $official['is_active'] ? '<span class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded">Active</span>' : '<span class="px-2 py-1 bg-red-100 text-red-800 text-xs rounded">Inactive</span>'; ?></td>
                   <td class="text-right space-x-2">
-                    <button class="text-blue-600 hover:text-blue-800 text-xs font-medium" data-modal-open="editRoleModal" onclick="setUserForRoleEdit(<?php echo js($official['username']); ?>, <?php echo js($fullName); ?>, <?php echo js($roleLabel); ?>)">Edit Role</button>
                     <form method="POST" action="../process/admin_settings.php" class="inline" onsubmit="return confirm('Revoke official authorization?');">
+                      <input type="hidden" name="settings_action" value="update_role" />
+                      <input type="hidden" name="user_id" value="<?php echo h($official['user_id']); ?>" />
                       <input type="hidden" name="username" value="<?php echo h($official['username']); ?>" />
                       <input type="hidden" name="new_role" value="Revoke" />
                       <button class="text-red-600 hover:text-red-800 text-xs font-medium">Revoke</button>
@@ -239,7 +465,7 @@ $importSummary = isset($_GET['success']) && $_GET['success'] === 'imported'
             </table>
           </div>
           <div class="pt-4 border-t flex gap-2">
-            <button class="btn btn-primary btn-sm" data-modal-open="authorizeRoleModal">+ Authorize New Official</button>
+            <button type="button" class="btn btn-primary btn-sm" data-modal-open="authorizeRoleModal">+ Authorize New Official</button>
           </div>
         </div>
       </section>
@@ -247,9 +473,37 @@ $importSummary = isset($_GET['success']) && $_GET['success'] === 'imported'
 
       <section class="card lg:col-span-2">
         <div class="card-header"><h2 class="font-semibold text-navy">Audit / Help</h2></div>
-        <div class="card-body text-sm text-gray-600">
-          <!-- PHP: link to documentation, or render audit trail -->
-          <p class="text-gray-400">No audit entries yet.</p>
+        <div class="card-body grid grid-cols-1 lg:grid-cols-[1fr_18rem] gap-4 text-sm text-gray-600">
+          <div class="overflow-x-auto">
+            <table class="table text-xs">
+              <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Record</th><th>Details</th></tr></thead>
+              <tbody>
+                <?php if (!$auditRows): ?>
+                  <tr><td colspan="5"><div class="empty text-sm"><p class="font-medium text-gray-700">No audit entries recorded yet.</p></div></td></tr>
+                <?php else: foreach ($auditRows as $audit):
+                  $auditRecord = trim(($audit['table_name'] ?? '') . (($audit['record_id'] ?? '') !== '' ? ' #' . $audit['record_id'] : ''));
+                  $auditDetails = settings_audit_detail_text($audit['details'] ?? '');
+                ?>
+                  <tr>
+                    <td class="whitespace-nowrap"><?php echo h(substr($audit['created_at'], 0, 16)); ?></td>
+                    <td><?php echo h($audit['actor_name']); ?></td>
+                    <td><?php echo h(settings_audit_action_label($audit['action_type'])); ?></td>
+                    <td><?php echo h($auditRecord !== '' ? $auditRecord : 'System'); ?></td>
+                    <td class="max-w-md break-words"><?php echo h($auditDetails !== '' ? $auditDetails : 'No details'); ?></td>
+                  </tr>
+                <?php endforeach; endif; ?>
+              </tbody>
+            </table>
+          </div>
+          <div class="rounded-md border border-gray-200 bg-gray-50 p-3 space-y-3">
+            <h3 class="text-sm font-semibold text-navy">Settings Help</h3>
+            <ul class="list-disc list-inside space-y-2 text-xs text-gray-600">
+              <li>CSV imports use the selected dataset format and the downloadable examples above.</li>
+              <li>System Notes are shared on this settings page and editable by administrators.</li>
+              <li>Audit rows show recent saved changes, imports, account actions, and role updates.</li>
+              <li>Reference data cannot be deleted while records still depend on it.</li>
+            </ul>
+          </div>
         </div>
       </section>
     </main>
@@ -259,12 +513,17 @@ $importSummary = isset($_GET['success']) && $_GET['success'] === 'imported'
     <div class="modal" id="authorizeRoleModal">
       <div class="modal-card">
         <div class="card-header"><h3 class="font-semibold text-navy">Authorize Official Role</h3>
-          <button data-modal-close class="text-gray-400 hover:text-gray-700">✕</button></div>
+          <button type="button" data-modal-close class="text-gray-400 hover:text-gray-700">✕</button></div>
         <form method="POST" action="../process/admin_settings.php" class="card-body grid grid-cols-1 gap-4">
+          <input type="hidden" name="settings_action" value="update_role" />
           <div><label class="label">Select System User</label>
             <select class="select" name="user_id" required>
               <option value="">Choose a system user...</option>
-              <?php foreach ($settingsBorrowers as $borrower): ?><option value="<?php echo h($borrower['user_id']); ?>"><?php echo h(trim($borrower['full_name']) ?: $borrower['username']); ?> - <?php echo h($borrower['username']); ?></option><?php endforeach; ?>
+              <?php foreach ($settingsRoleCandidates as $candidate):
+                $candidateRole = $candidate['role'] === 'admin' ? 'Administrator' : ($candidate['role'] === 'faculty' ? 'Staff' : 'Student');
+              ?>
+                <option value="<?php echo h($candidate['user_id']); ?>"><?php echo h(trim($candidate['full_name']) ?: $candidate['username']); ?> - <?php echo h($candidate['username']); ?> (<?php echo h($candidateRole); ?>)</option>
+              <?php endforeach; ?>
             </select>
           </div>
           <div><label class="label">Authorize As Role</label>
@@ -282,38 +541,21 @@ $importSummary = isset($_GET['success']) && $_GET['success'] === 'imported'
       </div>
     </div>
 
-    <!-- Modal: Edit User Role -->
-    <div class="modal" id="editRoleModal">
-      <div class="modal-card">
-        <div class="card-header"><h3 class="font-semibold text-navy">Edit Official Authorization</h3>
-          <button data-modal-close class="text-gray-400 hover:text-gray-700">✕</button></div>
-        <form method="POST" action="../process/admin_settings.php" class="card-body grid grid-cols-1 gap-4">
-          <input type="hidden" name="username" id="editUsername" />
-          <div><label class="label">User</label><input class="input bg-gray-100" id="editUserDisplay" disabled /></div>
-          <div><label class="label">Current Role</label><input class="input bg-gray-100" id="editCurrentRole" disabled /></div>
-          <div><label class="label">Change Role To</label>
-            <select class="select" name="new_role" required>
-              <option value="">Select role...</option>
-              <option value="Staff">Staff (Equipment Management)</option>
-              <option value="Administrator">Administrator (Full Access)</option>
-            </select>
-          </div>
-          <div class="flex justify-end gap-2">
-            <button type="button" class="btn btn-outline" data-modal-close>Cancel</button>
-            <button type="submit" class="btn btn-primary">Update Role</button>
-          </div>
-        </form>
-      </div>
-    </div>
     <?php endif; ?>
 
   </div>
   <script src="../js/shared.js"></script>
   <script>
-    function setUserForRoleEdit(username, fullName, currentRole) {
-      document.getElementById('editUsername').value = username;
-      document.getElementById('editUserDisplay').value = fullName + ' (' + username + ')';
-      document.getElementById('editCurrentRole').value = currentRole;
+    const csvDatasetSelect = document.getElementById('csvDatasetSelect');
+    if (csvDatasetSelect) {
+      const syncCsvFormat = () => {
+        document.querySelectorAll('[data-csv-format]').forEach((panel) => {
+          panel.classList.toggle('hidden', panel.dataset.csvFormat !== csvDatasetSelect.value);
+        });
+      };
+
+      csvDatasetSelect.addEventListener('change', syncCsvFormat);
+      syncCsvFormat();
     }
   </script>
 </body>

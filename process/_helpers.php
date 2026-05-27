@@ -67,6 +67,20 @@ function column_is_nullable(PDO $pdo, $table, $column)
     return strtoupper((string) $stmt->fetchColumn()) === 'YES';
 }
 
+function column_type(PDO $pdo, $table, $column)
+{
+    $stmt = db_exec(
+        $pdo,
+        'SELECT COLUMN_TYPE
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
+         LIMIT 1',
+        [$table, $column]
+    );
+
+    return strtolower((string) $stmt->fetchColumn());
+}
+
 function index_exists(PDO $pdo, $table, $index)
 {
     $stmt = db_exec(
@@ -107,6 +121,20 @@ function ensure_system_schema(PDO $pdo)
         );
     }
 
+    if (!table_exists($pdo, 'system_settings')) {
+        db_exec(
+            $pdo,
+            'CREATE TABLE IF NOT EXISTS system_settings (
+                setting_key VARCHAR(100) NOT NULL,
+                setting_value TEXT NULL,
+                updated_by INT NULL,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (setting_key),
+                KEY idx_system_settings_updated_by (updated_by)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci'
+        );
+    }
+
     if (table_exists($pdo, 'users') && !column_exists($pdo, 'users', 'official_id')) {
         db_exec($pdo, 'ALTER TABLE users ADD COLUMN official_id VARCHAR(50) NULL AFTER student_id');
     }
@@ -117,6 +145,13 @@ function ensure_system_schema(PDO $pdo)
 
     if (table_exists($pdo, 'users') && column_exists($pdo, 'users', 'official_id') && !index_exists($pdo, 'users', 'idx_official_id')) {
         db_exec($pdo, 'ALTER TABLE users ADD UNIQUE KEY idx_official_id (official_id)');
+    }
+
+    if (table_exists($pdo, 'master_list') && column_exists($pdo, 'master_list', 'year_level')) {
+        $yearLevelType = column_type($pdo, 'master_list', 'year_level');
+        if (strpos($yearLevelType, 'varchar') !== 0) {
+            db_exec($pdo, 'ALTER TABLE master_list MODIFY year_level VARCHAR(50) NULL');
+        }
     }
 
     if (table_exists($pdo, 'items') && !column_exists($pdo, 'items', 'stock_status')) {
@@ -233,6 +268,36 @@ function log_audit(PDO $pdo, $actionType, $tableName = null, $recordId = null, a
     );
 }
 
+function save_system_setting(PDO $pdo, $settingKey, $settingValue)
+{
+    ensure_system_schema($pdo);
+
+    $settingKey = substr(compact_spaces($settingKey), 0, 100);
+    if ($settingKey === '') {
+        throw new InvalidArgumentException('Setting key is required.');
+    }
+
+    $actorUserId = !empty($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
+    db_exec(
+        $pdo,
+        'INSERT INTO system_settings (setting_key, setting_value, updated_by)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+            setting_value = VALUES(setting_value),
+            updated_by = VALUES(updated_by),
+            updated_at = CURRENT_TIMESTAMP',
+        [$settingKey, $settingValue, $actorUserId]
+    );
+
+    log_audit(
+        $pdo,
+        'system_setting_update',
+        'system_settings',
+        $settingKey,
+        ['length' => strlen((string) $settingValue)]
+    );
+}
+
 function require_post($fallback)
 {
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
@@ -270,7 +335,7 @@ function require_login()
 
     $stmt = db_exec(
         $pdo,
-        'SELECT user_id, role, is_default_password
+        'SELECT user_id, student_id, official_id, username, role, is_default_password
          FROM users
          WHERE user_id = ? AND is_active = 1
          LIMIT 1',
@@ -284,6 +349,9 @@ function require_login()
     }
 
     $_SESSION['role'] = $user['role'];
+    $_SESSION['student_id'] = (int) ($user['student_id'] ?? 0);
+    $_SESSION['official_id'] = $user['official_id'] ?? null;
+    $_SESSION['username'] = $user['username'];
     $_SESSION['force_password_change'] = (int) $user['is_default_password'] === 1;
 
     $currentScript = basename($_SERVER['SCRIPT_NAME'] ?? '');
@@ -388,8 +456,55 @@ function split_full_name($fullName)
 
 function normalized_year($value)
 {
-    $value = clean($value);
-    return preg_match('/^\d{4}$/', $value) ? $value : null;
+    $value = compact_spaces($value);
+    if ($value === '') {
+        return null;
+    }
+
+    if (preg_match('/^\d{4}$/', $value)) {
+        return $value;
+    }
+
+    $normalized = strtolower(str_replace(['-', '_'], ' ', $value));
+    $normalized = preg_replace('/\s+/', ' ', trim($normalized));
+    $compact = str_replace(' ', '', $normalized);
+
+    $yearLevels = [
+        'first' => 'First',
+        'firstyear' => 'First',
+        '1st' => 'First',
+        '1styear' => 'First',
+        'second' => 'Second',
+        'secondyear' => 'Second',
+        '2nd' => 'Second',
+        '2ndyear' => 'Second',
+        'third' => 'Third',
+        'thirdyear' => 'Third',
+        '3rd' => 'Third',
+        '3rdyear' => 'Third',
+        'fourth' => 'Fourth',
+        'fourthyear' => 'Fourth',
+        '4th' => 'Fourth',
+        '4thyear' => 'Fourth',
+        '1' => 'Junior High School 1',
+        'jhs1' => 'Junior High School 1',
+        'juniorhigh1' => 'Junior High School 1',
+        'juniorhighschool1' => 'Junior High School 1',
+        '2' => 'Junior High School 2',
+        'jhs2' => 'Junior High School 2',
+        'juniorhigh2' => 'Junior High School 2',
+        'juniorhighschool2' => 'Junior High School 2',
+        '3' => 'Junior High School 3',
+        'jhs3' => 'Junior High School 3',
+        'juniorhigh3' => 'Junior High School 3',
+        'juniorhighschool3' => 'Junior High School 3',
+        '4' => 'Junior High School 4',
+        'jhs4' => 'Junior High School 4',
+        'juniorhigh4' => 'Junior High School 4',
+        'juniorhighschool4' => 'Junior High School 4',
+    ];
+
+    return $yearLevels[$compact] ?? null;
 }
 
 function require_non_negative_int($value, $fieldName)
@@ -931,10 +1046,13 @@ function assert_item_not_duplicate(PDO $pdo, $itemName, $categoryId, $itemId = 0
 
 function item_dependency_count(PDO $pdo, $itemId)
 {
-    $requests = (int) db_exec($pdo, 'SELECT COUNT(*) FROM borrow_request WHERE item_id = ?', [$itemId])->fetchColumn();
-    $transactions = (int) db_exec($pdo, 'SELECT COUNT(*) FROM transactions WHERE item_id = ?', [$itemId])->fetchColumn();
-
-    return $requests + $transactions;
+    return (int) db_exec(
+        $pdo,
+        'SELECT COUNT(*)
+         FROM transactions
+         WHERE item_id = ? AND status <> "RETURNED"',
+        [$itemId]
+    )->fetchColumn();
 }
 
 function password_matches($plain, $stored)

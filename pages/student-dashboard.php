@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../partials/page-data.php';
 require_borrower();
 
-$studentId = (int) $_SESSION['student_id'];
+$studentId = (int) ($currentUser['student_id'] ?? $_SESSION['student_id'] ?? 0);
 $activeRequests = (int) one_value('SELECT COUNT(*) FROM borrow_request WHERE student_id = ? AND status = "PENDING"', [$studentId]);
 $approvedRequests = (int) one_value('SELECT COUNT(*) FROM borrow_request WHERE student_id = ? AND status = "APPROVED"', [$studentId]);
 $borrowedItems = (int) one_value('SELECT COUNT(*) FROM transactions WHERE student_id = ? AND status IN ("PENDING", "ONGOING")', [$studentId]);

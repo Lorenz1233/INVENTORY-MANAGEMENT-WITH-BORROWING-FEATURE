@@ -1,0 +1,3 @@
+equipment_name,code,category,unit,qty,condition,description,date_added
+Oscilloscope,LAB-3001,Laboratory,pcs,4,Good,Digital oscilloscope,2026-05-27
+Soldering Station,LAB-3002,Electronics,pcs,8,Good,Temperature controlled soldering station,2026-05-27

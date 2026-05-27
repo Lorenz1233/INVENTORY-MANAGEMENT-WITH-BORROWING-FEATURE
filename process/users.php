@@ -69,6 +69,25 @@ try {
         respond_success('../pages/users.php', 'deactivated');
     }
 
+    if ($action === 'reactivate' && $userId > 0) {
+        if (!can_manage_user_roles($_SESSION['role'] ?? '')) {
+            respond_error('../pages/users.php', 'not_allowed', 'Only administrators can reactivate user accounts.');
+        }
+
+        $pdo->beginTransaction();
+        $stmt = db_exec($pdo, 'SELECT user_id, username FROM users WHERE user_id = ? FOR UPDATE', [$userId]);
+        $user = $stmt->fetch();
+
+        if (!$user) {
+            throw new RuntimeException('User not found.');
+        }
+
+        db_exec($pdo, 'UPDATE users SET is_active = 1 WHERE user_id = ?', [$userId]);
+        log_audit($pdo, 'user_reactivate', 'users', $userId, ['username' => $user['username']]);
+        $pdo->commit();
+        respond_success('../pages/users.php', 'reactivated');
+    }
+
     if ($action === 'role_update' || ($newRole !== '' && ($userId > 0 || $editUsername !== ''))) {
         if (!can_manage_user_roles($_SESSION['role'] ?? '')) {
             respond_error('../pages/users.php', 'not_allowed', 'Only administrators can change user roles.');

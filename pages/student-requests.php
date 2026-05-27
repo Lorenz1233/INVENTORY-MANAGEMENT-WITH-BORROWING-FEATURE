@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../partials/page-data.php';
 require_borrower();
 
+$studentId = (int) ($currentUser['student_id'] ?? $_SESSION['student_id'] ?? 0);
 $myRequestRows = all_rows(
     'SELECT br.*,
             DATE_ADD(br.request_date, INTERVAL br.days_to_borrow DAY) AS due_date,
@@ -12,7 +13,7 @@ $myRequestRows = all_rows(
      LEFT JOIN transactions t ON t.request_id = br.request_id
      WHERE br.student_id = ?
      ORDER BY br.created_at DESC',
-    [$_SESSION['student_id']]
+    [$studentId]
 );
 ?>
 <!doctype html>

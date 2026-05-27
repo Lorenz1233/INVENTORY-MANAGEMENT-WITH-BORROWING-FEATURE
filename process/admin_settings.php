@@ -68,7 +68,7 @@ function csv_validate_headers($dataset, array $headers)
 
     foreach ($requirements[$dataset] as $group) {
         if (!csv_has_any($headers, $group)) {
-            throw new InvalidArgumentException('CSV headers do not match the required schema.');
+            throw new InvalidArgumentException('CSV headers do not match the selected dataset. Use the format shown on this page or download the example CSV.');
         }
     }
 }
@@ -304,29 +304,68 @@ function update_settings_user_role(PDO $pdo, $userId, $username, $newRole)
     );
 }
 
+$settingsAction = '';
+
 try {
-    if (!empty($_FILES['csv_file']['tmp_name'])) {
+    $settingsAction = post_value('settings_action');
+    if ($settingsAction === '') {
+        if (isset($_FILES['csv_file'])) {
+            $settingsAction = 'import_csv';
+        } elseif (post_value('new_role') !== '' || post_value('user_id') !== '' || post_value('username') !== '') {
+            $settingsAction = 'update_role';
+        }
+    }
+
+    if ($settingsAction === 'save_notes') {
+        if (!can_manage_user_roles($_SESSION['role'] ?? '')) {
+            respond_error('../pages/admin-settings.php', 'not_allowed', 'Only administrators can update system notes.', 400, ['section' => 'notes']);
+        }
+
+        $systemNotes = post_value('system_notes');
+        if (strlen($systemNotes) > 5000) {
+            respond_error('../pages/admin-settings.php', 'notes_too_long', 'System notes must be 5000 characters or fewer.', 400, ['section' => 'notes']);
+        }
+
+        $pdo->beginTransaction();
+        save_system_setting($pdo, 'system_notes', $systemNotes);
+        $pdo->commit();
+
+        respond_success('../pages/admin-settings.php', 'notes_saved', ['section' => 'notes']);
+    }
+
+    if ($settingsAction === 'import_csv') {
         $dataset = post_value('dataset', 'students');
         $mode = strtolower(post_value('import_mode', 'safe')) === 'strict' ? 'strict' : 'safe';
 
         if (!in_array($dataset, ['students', 'faculty', 'masterlist', 'equipment', 'materials'], true)) {
-            respond_error('../pages/admin-settings.php', 'dataset', 'Invalid import dataset.');
+            respond_error('../pages/admin-settings.php', 'dataset', 'Invalid import dataset.', 400, ['section' => 'csv']);
         }
 
         if (in_array($dataset, ['faculty', 'masterlist'], true) && !can_manage_user_roles($_SESSION['role'] ?? '')) {
-            respond_error('../pages/admin-settings.php', 'not_allowed', 'Only administrators can import staff or mixed masterlists.');
+            respond_error('../pages/admin-settings.php', 'not_allowed', 'Only administrators can import staff or mixed masterlists.', 400, ['section' => 'csv']);
         }
 
         if (($_FILES['csv_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            respond_error('../pages/admin-settings.php', 'upload_failed', 'CSV upload failed.');
+            respond_error('../pages/admin-settings.php', 'upload_failed', 'CSV upload failed.', 400, ['section' => 'csv']);
         }
 
         $originalName = $_FILES['csv_file']['name'] ?? '';
         if (strtolower(pathinfo($originalName, PATHINFO_EXTENSION)) !== 'csv') {
-            respond_error('../pages/admin-settings.php', 'file_type', 'Only CSV files are accepted.');
+            respond_error('../pages/admin-settings.php', 'file_type', 'Only CSV files are accepted.', 400, ['section' => 'csv']);
         }
 
-        $summary = import_csv($pdo, $dataset, $_FILES['csv_file']['tmp_name'], $mode);
+        try {
+            $summary = import_csv($pdo, $dataset, $_FILES['csv_file']['tmp_name'], $mode);
+        } catch (InvalidArgumentException | RuntimeException $csvError) {
+            respond_error(
+                '../pages/admin-settings.php',
+                'csv_import_failed',
+                $csvError->getMessage(),
+                400,
+                ['section' => 'csv', 'reason' => $csvError->getMessage()]
+            );
+        }
+
         respond_success(
             '../pages/admin-settings.php',
             'imported',
@@ -338,16 +377,20 @@ try {
         );
     }
 
+    if ($settingsAction !== 'update_role') {
+        respond_error('../pages/admin-settings.php', 'invalid_action', 'The submitted settings action was not recognized.', 400, ['section' => 'roles']);
+    }
+
     $userId = (int) post_value('user_id');
     $username = post_value('username');
     $newRole = post_value('new_role');
 
     if (!can_manage_user_roles($_SESSION['role'] ?? '')) {
-        respond_error('../pages/admin-settings.php', 'not_allowed', 'Only administrators can change user roles.');
+        respond_error('../pages/admin-settings.php', 'not_allowed', 'Only administrators can change user roles.', 400, ['section' => 'roles']);
     }
 
     if ($newRole === '' || ($userId <= 0 && $username === '')) {
-        respond_error('../pages/admin-settings.php', 'missing', 'User and role are required.');
+        respond_error('../pages/admin-settings.php', 'missing', 'User and role are required.', 400, ['section' => 'roles']);
     }
 
     $pdo->beginTransaction();
@@ -358,5 +401,11 @@ try {
 } catch (Throwable $error) {
     rollback_if_active($pdo);
     log_internal_error('admin_settings', $error);
-    respond_error('../pages/admin-settings.php', 'settings_failed', 'The settings request could not be completed.');
+    $section = 'roles';
+    if ($settingsAction === 'import_csv') {
+        $section = 'csv';
+    } elseif ($settingsAction === 'save_notes') {
+        $section = 'notes';
+    }
+    respond_error('../pages/admin-settings.php', 'settings_failed', 'The settings request could not be completed.', 400, ['section' => $section]);
 }

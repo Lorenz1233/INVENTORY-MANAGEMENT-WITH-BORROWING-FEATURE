@@ -170,7 +170,7 @@ CREATE TABLE `master_list` (
   `first_name` varchar(100) NOT NULL,
   `last_name` varchar(255) NOT NULL,
   `course_code` varchar(20) DEFAULT NULL,
-  `year_level` year(4) DEFAULT NULL,
+  `year_level` varchar(50) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -234,6 +234,19 @@ INSERT INTO `positions` (`position_code`, `position_name`) VALUES
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `system_settings`
+--
+
+CREATE TABLE `system_settings` (
+  `setting_key` varchar(100) NOT NULL,
+  `setting_value` text DEFAULT NULL,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `transactions`
 --
 
@@ -261,33 +274,6 @@ INSERT INTO `transactions` (`transaction_id`, `request_id`, `student_id`, `item_
 (7, 8, 2023002, 2, 0, '2026-05-14', '2029-09-07', '2026-05-14 03:37:28', '2026-05-17 08:41:26', 'RETURNED'),
 (8, 9, 2023002, 5, 0, '2026-05-17', '2026-05-20', '2026-05-17 10:30:16', '2026-05-17 10:30:16', 'PENDING');
 
---
--- Triggers `transactions`
---
-DELIMITER $$
-CREATE TRIGGER `trg_after_borrow` AFTER INSERT ON `transactions` FOR EACH ROW BEGIN
-  IF NEW.status = 'BORROWED' THEN
-    UPDATE `items` 
-    SET `available_quantity` = `available_quantity` - NEW.quantity_borrowed
-    WHERE `item_id` = NEW.item_id;
-  END IF;
-END
-$$
-DELIMITER ;
-DELIMITER $$
-CREATE TRIGGER `trg_after_return` AFTER UPDATE ON `transactions` FOR EACH ROW BEGIN
-  IF NEW.status = 'RETURNED' AND OLD.status = 'BORROWED' THEN
-    UPDATE `items` 
-    SET `available_quantity` = `available_quantity` + NEW.quantity_borrowed
-    WHERE `item_id` = NEW.item_id;
-  END IF;
-END
-$$
-DELIMITER ;
-
--- --------------------------------------------------------
-
---
 -- Table structure for table `unit`
 --
 
@@ -402,6 +388,13 @@ ALTER TABLE `officials_masterlist`
 --
 ALTER TABLE `positions`
   ADD PRIMARY KEY (`position_code`);
+
+--
+-- Indexes for table `system_settings`
+--
+ALTER TABLE `system_settings`
+  ADD PRIMARY KEY (`setting_key`),
+  ADD KEY `idx_system_settings_updated_by` (`updated_by`);
 
 --
 -- Indexes for table `transactions`

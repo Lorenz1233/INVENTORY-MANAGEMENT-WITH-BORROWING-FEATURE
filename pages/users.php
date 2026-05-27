@@ -12,13 +12,15 @@ $userRows = all_rows(
      LEFT JOIN officials_masterlist o ON o.official_id = u.official_id
      ORDER BY u.created_at DESC'
 );
-$borrowerRows = all_rows(
+$authorizationCandidateRows = all_rows(
     'SELECT u.*,
             COALESCE(NULLIF(TRIM(CONCAT(COALESCE(m.first_name, ""), " ", COALESCE(m.last_name, ""))), ""),
+                     NULLIF(TRIM(CONCAT(COALESCE(o.first_name, ""), " ", COALESCE(o.last_name, ""))), ""),
                      u.username) AS full_name
      FROM users u
      LEFT JOIN master_list m ON m.student_id = u.student_id
-     WHERE u.role = "student" AND u.is_active = 1
+     LEFT JOIN officials_masterlist o ON o.official_id = u.official_id
+     WHERE u.is_active = 1
      ORDER BY u.username'
 );
 $officialRows = array_values(array_filter($userRows, function ($user) {
@@ -111,11 +113,19 @@ $officialRows = array_values(array_filter($userRows, function ($user) {
                 <td><?php echo h(substr($user['created_at'], 0, 10)); ?></td>
                 <td>
                   <?php if ((int) $user['user_id'] !== (int) ($_SESSION['user_id'] ?? 0)): ?>
-                    <form method="POST" action="../process/users.php" class="flex justify-center" onsubmit="return confirm('Deactivate this user?');">
-                      <input type="hidden" name="action" value="deactivate" />
-                      <input type="hidden" name="user_id" value="<?php echo h($user['user_id']); ?>" />
-                      <button class="text-red-600 hover:text-red-800 text-xs font-medium">Deactivate</button>
-                    </form>
+                    <?php if ((int) $user['is_active'] === 1): ?>
+                      <form method="POST" action="../process/users.php" class="flex justify-center" onsubmit="return confirm('Deactivate this user?');">
+                        <input type="hidden" name="action" value="deactivate" />
+                        <input type="hidden" name="user_id" value="<?php echo h($user['user_id']); ?>" />
+                        <button class="text-red-600 hover:text-red-800 text-xs font-medium">Deactivate</button>
+                      </form>
+                    <?php else: ?>
+                      <form method="POST" action="../process/users.php" class="flex justify-center" onsubmit="return confirm('Reactivate this user?');">
+                        <input type="hidden" name="action" value="reactivate" />
+                        <input type="hidden" name="user_id" value="<?php echo h($user['user_id']); ?>" />
+                        <button class="text-green-700 hover:text-green-900 text-xs font-medium">Reactivate</button>
+                      </form>
+                    <?php endif; ?>
                   <?php endif; ?>
                 </td>
               </tr>
@@ -182,7 +192,7 @@ $officialRows = array_values(array_filter($userRows, function ($user) {
       <div class="card-header"><h3 class="font-semibold text-navy">Authorize Official Role</h3><button data-modal-close class="text-gray-400 hover:text-gray-700">x</button></div>
       <form method="POST" action="../process/users.php" class="card-body grid grid-cols-1 gap-4">
         <input type="hidden" name="action" value="role_update" />
-        <div><label class="label">Select System User</label><select class="select" name="user_id" required><option value="">Choose a user...</option><?php foreach ($borrowerRows as $borrower): ?><option value="<?php echo h($borrower['user_id']); ?>"><?php echo h(trim($borrower['full_name']) ?: $borrower['username']); ?> (<?php echo h($borrower['username']); ?>)</option><?php endforeach; ?></select></div>
+        <div><label class="label">Select System User</label><select class="select" name="user_id" required><option value="">Choose a user...</option><?php foreach ($authorizationCandidateRows as $candidate): ?><?php $candidateRole = $candidate['role'] === 'admin' ? 'Administrator' : ($candidate['role'] === 'faculty' ? 'Staff' : 'Student'); ?><option value="<?php echo h($candidate['user_id']); ?>"><?php echo h(trim($candidate['full_name']) ?: $candidate['username']); ?> (<?php echo h($candidate['username']); ?> - <?php echo h($candidateRole); ?>)</option><?php endforeach; ?></select></div>
         <div><label class="label">Authorize As Role</label><select class="select" name="new_role" required><option value="">Select a role...</option><option value="Faculty">Faculty</option><option value="Admin">Admin</option></select></div>
         <div class="flex justify-end gap-2"><button type="button" class="btn btn-outline" data-modal-close>Cancel</button><button type="submit" class="btn btn-primary">Authorize</button></div>
       </form>
