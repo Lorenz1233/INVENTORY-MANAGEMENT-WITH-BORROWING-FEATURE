@@ -1,0 +1,109 @@
+<?php
+require_once __DIR__ . '/_helpers.php';
+
+require_post('../pages/equipment.php');
+require_admin();
+
+$itemId = (int) post_value('id');
+$action = strtolower(post_value('action', 'save'));
+$itemCode = post_value('item_code');
+$itemName = compact_spaces(post_value('item_name'));
+$condition = post_value('condition');
+$postedStatus = strtolower(post_value('status'));
+$status = $postedStatus === 'maintenance' ? 'inactive' : 'active';
+$description = post_value('description');
+
+try {
+    if ($action === 'delete' && $itemId > 0) {
+        $pdo->beginTransaction();
+
+        $stmt = db_exec($pdo, 'SELECT item_id, item_name FROM items WHERE item_id = ? FOR UPDATE', [$itemId]);
+        $item = $stmt->fetch();
+
+        if (!$item) {
+            throw new RuntimeException('Item not found.');
+        }
+
+        if (item_dependency_count($pdo, $itemId) > 0) {
+            throw new RuntimeException('item_in_use');
+        }
+
+        db_exec($pdo, 'DELETE FROM items WHERE item_id = ?', [$itemId]);
+        log_audit($pdo, 'item_delete', 'items', $itemId, ['item_name' => $item['item_name'], 'type' => 'equipment']);
+        $pdo->commit();
+
+        respond_success('../pages/equipment.php', 'deleted');
+    }
+
+    if ($itemName === '') {
+        respond_error('../pages/equipment.php', 'missing', 'Item name is required.');
+    }
+
+    $quantity = require_non_negative_int(post_value('quantity'), 'Quantity');
+
+    $pdo->beginTransaction();
+
+    $categoryId = require_existing_category_id($pdo, post_value('category_id'), post_value('category'));
+    $unitId = require_existing_unit_id($pdo, post_value('unit_id'), post_value('unit') ?: 'pcs');
+    assert_item_not_duplicate($pdo, $itemName, $categoryId, $itemId);
+
+    $notes = trim($description . "\nType: Equipment\nItem code: " . $itemCode . "\nCondition: " . $condition);
+
+    if ($itemId > 0) {
+        $stmt = db_exec(
+            $pdo,
+            'SELECT total_quantity, available_quantity, min_quantity_alert
+             FROM items
+             WHERE item_id = ?
+             FOR UPDATE',
+            [$itemId]
+        );
+        $currentItem = $stmt->fetch();
+
+        if (!$currentItem) {
+            throw new RuntimeException('Item not found.');
+        }
+
+        $borrowedQuantity = max(0, (int) $currentItem['total_quantity'] - (int) $currentItem['available_quantity']);
+        if ($quantity < $borrowedQuantity) {
+            throw new RuntimeException('quantity_below_borrowed');
+        }
+
+        $availableQuantity = $quantity - $borrowedQuantity;
+        $stockStatus = inventory_stock_status($availableQuantity, (int) $currentItem['min_quantity_alert']);
+
+        db_exec(
+            $pdo,
+            'UPDATE items
+             SET item_name = ?, description = ?, unit_id = ?, category_id = ?,
+                 total_quantity = ?, available_quantity = ?, status = ?, stock_status = ?
+             WHERE item_id = ?',
+            [$itemName, $notes, $unitId, $categoryId, $quantity, $availableQuantity, $status, $stockStatus, $itemId]
+        );
+        log_audit($pdo, 'item_update', 'items', $itemId, ['item_name' => $itemName, 'type' => 'equipment']);
+    } else {
+        $stockStatus = inventory_stock_status($quantity);
+
+        db_exec(
+            $pdo,
+            'INSERT INTO items
+                (item_name, description, unit_id, category_id, total_quantity, available_quantity, date_added, status, stock_status)
+             VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, ?)',
+            [$itemName, $notes, $unitId, $categoryId, $quantity, $quantity, $status, $stockStatus]
+        );
+        $itemId = (int) $pdo->lastInsertId();
+        log_audit($pdo, 'item_create', 'items', $itemId, ['item_name' => $itemName, 'type' => 'equipment']);
+    }
+
+    $pdo->commit();
+    respond_success('../pages/equipment.php', 'saved');
+} catch (Throwable $error) {
+    rollback_if_active($pdo);
+    log_internal_error('equipment', $error);
+
+    $code = $error->getMessage() === 'item_in_use'
+        ? 'item_in_use'
+        : ($error->getMessage() === 'quantity_below_borrowed' ? 'quantity_below_borrowed' : 'save_failed');
+
+    respond_error('../pages/equipment.php', $code, 'The equipment item could not be saved.');
+}

@@ -1,0 +1,85 @@
+/* Shared styles for MSU-MCEST CEMS.
+   Tailwind handles 95% of styling; this file holds small reusable patterns
+   and the page fade-in transition. */
+
+html, body { height: 100%; }
+body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #F7F8FB; color: #111827; }
+
+/* Subtle page fade-in (no heavy animation).
+   Default: visible, so content is readable even if JS is disabled.
+   When JS is present, we briefly fade in via .is-ready toggle. */
+.page-fade { opacity: 1; transition: opacity .2s ease; }
+.js-ready .page-fade { opacity: 0; }
+.js-ready .page-fade.is-ready { opacity: 1; }
+
+/* Sidebar nav links (used in admin/student sidebars) */
+.nav-link {
+  display: flex; align-items: center; gap: .625rem;
+  padding: .55rem 1.25rem;
+  color: rgba(255,255,255,.78);
+  border-left: 3px solid transparent;
+}
+.nav-link:hover { background: rgba(255,255,255,.05); color: #fff; }
+.nav-link.active { background: rgba(255,255,255,.06); color: #fff; border-left-color: #D4A017; }
+
+/* Status badges */
+.badge { display:inline-flex; align-items:center; padding:.15rem .55rem; border-radius:9999px; font-size:.7rem; font-weight:600; line-height:1.2; }
+.badge-pending  { background:#FEF3C7; color:#92400E; }
+.badge-approved { background:#DCFCE7; color:#166534; }
+.badge-rejected { background:#FEE2E2; color:#991B1B; }
+.badge-borrowed { background:#DBEAFE; color:#1E40AF; }
+.badge-returned { background:#E5E7EB; color:#374151; }
+.badge-overdue  { background:#FEE2E2; color:#991B1B; }
+.badge-active   { background:#DCFCE7; color:#166534; }
+.badge-inactive { background:#E5E7EB; color:#374151; }
+
+/* Form controls */
+.input, .select, .textarea {
+  width: 100%; border: 1px solid #E5E7EB; background: #fff; border-radius: .5rem;
+  padding: .55rem .75rem; font-size: .875rem; color: #111827;
+}
+.input:focus, .select:focus, .textarea:focus { outline: none; border-color: #0B2545; box-shadow: 0 0 0 3px rgba(11,37,69,.08); }
+.label { display:block; font-size:.8rem; font-weight:600; color:#374151; margin-bottom:.35rem; }
+
+/* Buttons */
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:.5rem; padding:.55rem 1rem; border-radius:.5rem; font-size:.875rem; font-weight:600; white-space:nowrap; transition: background .15s ease, color .15s ease, border-color .15s ease; }
+.btn-primary   { background:#0B2545; color:#fff; }
+.btn-primary:hover   { background:#13335E; }
+.btn-gold      { background:#D4A017; color:#061A33; }
+.btn-gold:hover{ background:#B8860B; }
+.btn-outline   { background:#fff; color:#0B2545; border:1px solid #E5E7EB; }
+.btn-outline:hover { border-color:#0B2545; }
+.btn-danger    { background:#B91C1C; color:#fff; }
+.btn-danger:hover { background:#991B1B; }
+.btn-sm        { padding:.35rem .65rem; font-size:.75rem; }
+
+/* Cards & surfaces */
+.card { background:#fff; border:1px solid #E5E7EB; border-radius:.75rem; }
+.card-header { padding:1rem 1.25rem; border-bottom:1px solid #F1F2F4; display:flex; align-items:center; justify-content:space-between; }
+.card-body { padding:1.25rem; }
+
+/* Tables */
+.table { width:100%; border-collapse:separate; border-spacing:0; font-size:.875rem; }
+.table thead th { text-align:left; font-weight:600; font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:#6B7280; background:#F9FAFB; padding:.65rem .9rem; border-bottom:1px solid #E5E7EB; }
+.table tbody td { padding:.7rem .9rem; border-bottom:1px solid #F1F2F4; color:#1F2937; vertical-align: middle; }
+.table tbody tr:hover { background:#FAFBFC; }
+
+/* Modal */
+.modal { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center; background:rgba(6,26,51,.45); padding:1rem; }
+.modal.is-open { display:flex; }
+.modal-card { background:#fff; border-radius:.75rem; width:100%; max-width:38rem; max-height:90vh; overflow:auto; box-shadow:0 20px 50px -20px rgba(0,0,0,.3); }
+
+/* Empty states */
+.empty { text-align:center; padding:3rem 1rem; color:#6B7280; }
+.empty .icon { width:2.75rem; height:2.75rem; border-radius:9999px; background:#F1F2F4; display:inline-flex; align-items:center; justify-content:center; margin-bottom:.6rem; }
+
+/* Tabs */
+.tab { padding:.55rem .9rem; font-size:.8rem; font-weight:600; color:#6B7280; border-bottom:2px solid transparent; }
+.tab.is-active { color:#0B2545; border-bottom-color:#D4A017; }
+
+/* Sidebar mobile */
+@media (max-width: 767px) {
+  .sidebar { transform: translateX(-100%); transition: transform .2s ease; }
+  .sidebar.is-open { transform: translateX(0); }
+  .main-shift { margin-left: 0 !important; }
+}
