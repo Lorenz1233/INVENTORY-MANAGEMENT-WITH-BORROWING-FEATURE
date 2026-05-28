@@ -6,7 +6,7 @@ require_admin();
 
 $action = strtolower(post_value('action', 'save'));
 $courseCode = substr(strtoupper(post_value('course_code')), 0, 20);
-$courseName = substr(compact_spaces(post_value('course_name')), 0, 20);
+$courseName = substr(compact_spaces(post_value('course_name')), 0, 255);
 
 try {
     if ($action === 'delete' && $courseCode !== '') {

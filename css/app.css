@@ -5,6 +5,22 @@
 html, body { height: 100%; }
 body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #F7F8FB; color: #111827; }
 
+.brand-logo {
+  width: 2.75rem !important;
+  height: 2.75rem !important;
+  max-width: 2.75rem !important;
+  max-height: 2.75rem !important;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.brand-logo-lg {
+  width: 3rem !important;
+  height: 3rem !important;
+  max-width: 3rem !important;
+  max-height: 3rem !important;
+}
+
 /* Subtle page fade-in (no heavy animation).
    Default: visible, so content is readable even if JS is disabled.
    When JS is present, we briefly fade in via .is-ready toggle. */

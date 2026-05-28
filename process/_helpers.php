@@ -553,7 +553,7 @@ function get_or_create_course(PDO $pdo, $courseCode, $courseName = '')
     }
 
     $courseName = clean($courseName) ?: $courseCode;
-    $courseName = substr($courseName, 0, 20);
+    $courseName = substr($courseName, 0, 255);
 
     $stmt = db_exec($pdo, 'SELECT course_code FROM course WHERE course_code = ? LIMIT 1', [$courseCode]);
 

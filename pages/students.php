@@ -49,7 +49,7 @@ $studentYearLevelOptions = ['First', 'Second', 'Third', 'Fourth', 'Junior High S
 <!-- PHP: session check (admin/staff only) -->
 <aside class="sidebar hidden md:flex md:flex-col w-64 bg-navy text-white fixed inset-y-0 left-0 z-30">
   <div class="px-5 py-5 border-b border-white/10 flex items-center gap-3">
-    <div class="w-9 h-9 rounded-md bg-gold text-navy-dark grid place-items-center font-bold">M</div>
+    <img class="brand-logo" src="../assets/images/logo.png" width="44" height="44" alt="MSU-MCEST logo" />
     <div>
       <div class="text-sm font-semibold leading-tight">MSU-MCEST</div>
       <div class="text-xs text-white/60">Equipment Mgmt</div>
@@ -136,12 +136,6 @@ $studentYearLevelOptions = ['First', 'Second', 'Third', 'Fourth', 'Junior High S
                       data-group-code="<?php echo h($person['group_code']); ?>"
                       data-account-role="<?php echo h($accountRole); ?>"
                       data-year="<?php echo h($person['year_level']); ?>">Edit</button>
-                    <form method="POST" action="../process/masterlist.php" class="inline" onsubmit="return confirm('Delete this masterlist record?');">
-                      <input type="hidden" name="action" value="delete" />
-                      <input type="hidden" name="user_type" value="<?php echo h($person['user_type']); ?>" />
-                      <input type="hidden" name="id_number" value="<?php echo h($person['id_number']); ?>" />
-                      <button class="text-red-600 hover:text-red-800 text-xs font-medium">Delete</button>
-                    </form>
                   </td>
                 </tr>
               <?php endforeach; endif; ?>

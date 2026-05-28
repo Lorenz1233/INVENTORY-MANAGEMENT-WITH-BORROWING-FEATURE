@@ -1,0 +1,16 @@
+user_type,id_number,first_name,last_name,department,year_level
+student,20265001,Elena,Cruz,BSIT,First
+student,20265002,Marco,Lim,BSCS,Second
+student,20265003,Sofia,Navarro,BSIS,Third
+student,20265004,Andre,Villanueva,BSIT,Fourth
+student,20265005,Patricia,Reyes,BSBA,First
+student,20265006,Joshua,Santos,BSED,Second
+student,20265007,Mikaela,Tan,BSCS,Third
+student,20265008,Nathan,Dizon,BSIT,Fourth
+student,20265009,Bianca,Garcia,BSHM,First
+student,20265010,Cedric,Ramos,BSCRIM,Second
+faculty,FAC-TST-3001,Clarissa,Mendoza,Faculty,
+faculty,FAC-TST-3002,Daniel,Aquino,Laboratory Coordinator,
+faculty,FAC-TST-3003,Monica,Del Rosario,IT Department,
+faculty,FAC-TST-3004,Victor,Salazar,Property Custodian,
+faculty,FAC-TST-3005,Rachel,Bautista,Academic Affairs,

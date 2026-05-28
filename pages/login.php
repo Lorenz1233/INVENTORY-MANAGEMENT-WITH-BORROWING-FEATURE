@@ -24,7 +24,7 @@ $loginMessage = $loginError === 'missing'
     <!-- Brand panel -->
     <section class="hidden md:flex bg-navy text-white p-10 flex-col justify-between">
       <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-md bg-gold text-navy-dark grid place-items-center font-bold">M</div>
+        <img class="brand-logo brand-logo-lg" src="../assets/images/logo.png" width="48" height="48" alt="MSU-MCEST logo" />
         <div>
           <div class="font-semibold">MSU-MCEST</div>
           <div class="text-xs text-white/60">Campus Equipment Management</div>
@@ -43,7 +43,7 @@ $loginMessage = $loginError === 'missing'
     <section class="flex items-center justify-center p-6 md:p-10">
       <div class="w-full max-w-md">
         <div class="md:hidden flex items-center gap-3 mb-6">
-          <div class="w-10 h-10 rounded-md bg-navy text-white grid place-items-center font-bold">M</div>
+          <img class="brand-logo brand-logo-lg" src="../assets/images/logo.png" width="48" height="48" alt="MSU-MCEST logo" />
           <div>
             <div class="font-semibold text-navy">MSU-MCEST</div>
             <div class="text-xs text-gray-500">Equipment Management</div>

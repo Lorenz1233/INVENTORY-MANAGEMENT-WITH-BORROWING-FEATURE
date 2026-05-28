@@ -66,27 +66,6 @@ INSERT INTO `borrow_request` (`request_id`, `student_id`, `item_id`, `quantity_r
 (8, 2023002, 2, 12, '2026-05-14', 1212, 'APPROVED', NULL, '2026-05-14 03:37:07'),
 (9, 2023002, 5, 1, '2026-05-17', 3, 'REJECTED', NULL, '2026-05-17 10:30:16');
 
---
--- Triggers `borrow_request`
---
-DELIMITER $$
-CREATE TRIGGER `trg_before_request` BEFORE INSERT ON `borrow_request` FOR EACH ROW BEGIN
-  DECLARE avail_qty INT;
-  
-  SELECT available_quantity INTO avail_qty 
-  FROM items WHERE item_id = NEW.item_id;
-  
-  IF NEW.quantity_requested > avail_qty THEN
-    SIGNAL SQLSTATE '45000' 
-    SET MESSAGE_TEXT = 'Insufficient quantity available';
-  END IF;
-END
-$$
-DELIMITER ;
-
--- --------------------------------------------------------
-
---
 -- Table structure for table `category`
 --
 
@@ -114,7 +93,7 @@ INSERT INTO `category` (`category_id`, `category_name`) VALUES
 
 CREATE TABLE `course` (
   `course_code` varchar(20) NOT NULL,
-  `course_name` varchar(20) DEFAULT NULL
+  `course_name` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
