@@ -1453,6 +1453,67 @@ function assert_item_not_duplicate(PDO $pdo, $itemName, $categoryId, $itemId = 0
     }
 }
 
+function owner_allocations_from_post(PDO $pdo, $fallbackOwnerKey = 'owner_official_id', $fallbackQuantityKey = 'quantity', $fallbackItemId = 0)
+{
+    $ownerIds = $_POST['owner_official_ids'] ?? [];
+    $quantities = $_POST['owner_quantities'] ?? [];
+    $itemIds = $_POST['allocation_item_ids'] ?? [];
+
+    if (!is_array($ownerIds)) {
+        $ownerIds = [];
+    }
+
+    if (!is_array($quantities)) {
+        $quantities = [];
+    }
+
+    if (!is_array($itemIds)) {
+        $itemIds = [];
+    }
+
+    if (!$ownerIds && isset($_POST[$fallbackOwnerKey])) {
+        $ownerIds = [$_POST[$fallbackOwnerKey]];
+        $quantities = [$_POST[$fallbackQuantityKey] ?? ''];
+        $itemIds = [$fallbackItemId];
+    }
+
+    $allocations = [];
+    $seenOwners = [];
+    $rowCount = max(count($ownerIds), count($quantities), count($itemIds));
+
+    for ($index = 0; $index < $rowCount; $index++) {
+        $ownerId = clean($ownerIds[$index] ?? '');
+        $quantityValue = clean($quantities[$index] ?? '');
+        $allocationItemId = (int) clean($itemIds[$index] ?? '');
+
+        if ($ownerId === '' && $quantityValue === '') {
+            continue;
+        }
+
+        if ($ownerId === '' || $quantityValue === '') {
+            throw new InvalidArgumentException('Please complete every owner allocation.');
+        }
+
+        $ownerId = require_existing_owner_official_id($pdo, $ownerId);
+        if (isset($seenOwners[$ownerId])) {
+            throw new InvalidArgumentException('Each owner can only be listed once for the same item.');
+        }
+
+        $seenOwners[$ownerId] = true;
+        $allocations[] = [
+            'item_id' => $allocationItemId,
+            'owner_official_id' => $ownerId,
+            'quantity' => require_non_negative_int($quantityValue, 'Owner quantity'),
+        ];
+    }
+
+    if (!$allocations) {
+        throw new InvalidArgumentException('Please add at least one owner allocation.');
+    }
+
+    return $allocations;
+}
+
 function item_dependency_count(PDO $pdo, $itemId)
 {
     return (int) db_exec(

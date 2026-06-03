@@ -71,6 +71,7 @@ $facultyOwnerRows = all_rows(
      FROM officials_masterlist o
      ORDER BY o.last_name, o.first_name'
 );
+$ownerOptionsJson = json_encode($facultyOwnerRows, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
 $materialGroups = array_unique(array_map(function ($row) {
     return strtolower((string) $row['item_name']) . '|' . (string) $row['category_id'];
 }, $materialRows));
@@ -296,14 +297,12 @@ if (($_GET['export'] ?? '') === 'csv') {
             </select>
           </div>
           <div class="md:col-span-2"><label class="label">Description</label><textarea class="textarea" name="description" rows="2"></textarea></div>
-          <div class="md:col-span-2"><label class="label">Owner (Official)</label>
-            <input class="input mb-2" type="search" placeholder="Search owner by name or ID..." data-owner-search />
-            <select class="select" name="owner_official_id" required>
-              <option value="">Select official owner</option>
-              <?php foreach ($facultyOwnerRows as $owner): ?>
-                <option value="<?php echo h($owner['official_id']); ?>"><?php echo h($owner['full_name']); ?> (<?php echo h($owner['official_id']); ?>)</option>
-              <?php endforeach; ?>
-            </select>
+          <div class="md:col-span-2 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <label class="label mb-0">Owner allocations</label>
+              <button type="button" class="btn btn-outline btn-sm" data-add-owner-allocation>+ Add Owner</button>
+            </div>
+            <div class="space-y-2" data-owner-allocations></div>
           </div>
           <div><label class="label">Unit</label>
             <select class="select" name="unit_id" required>
@@ -313,7 +312,6 @@ if (($_GET['export'] ?? '') === 'csv') {
               <?php endforeach; ?>
             </select>
           </div>
-          <div><label class="label">Owner quantity</label><input class="input" type="number" name="quantity" min="0" /></div>
           <div><label class="label">Unit price (PHP)</label><input class="input" type="number" step="0.01" name="unit_price" min="0" /></div>
           <div><label class="label">Date added</label><input class="input" type="date" name="date_added" /></div>
           <div class="md:col-span-2 flex justify-end gap-2">
@@ -327,14 +325,74 @@ if (($_GET['export'] ?? '') === 'csv') {
   </div>
   <script src="../js/shared.js"></script>
   <script>
-    function setupOwnerSearch(form) {
-      var search = form.querySelector('[data-owner-search]');
-      var select = form.elements.owner_official_id;
-      if (!search || !select) {
-        return;
-      }
+    var materialOwnerOptions = <?php echo $ownerOptionsJson ?: '[]'; ?>;
 
-      var options = Array.prototype.slice.call(select.options).map(function (option) {
+    function createOwnerAllocationRow(container, allocation) {
+      var row = document.createElement('div');
+      row.className = 'grid grid-cols-1 md:grid-cols-[1fr_9rem_auto] gap-2 rounded-md border border-gray-200 bg-gray-50 p-3';
+
+      var ownerWrap = document.createElement('div');
+      var ownerLabel = document.createElement('label');
+      ownerLabel.className = 'label';
+      ownerLabel.textContent = 'Owner';
+      var search = document.createElement('input');
+      search.className = 'input mb-2';
+      search.type = 'search';
+      search.placeholder = 'Search owner by name or ID...';
+      var select = document.createElement('select');
+      select.className = 'select';
+      select.name = 'owner_official_ids[]';
+      select.required = true;
+      var placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Select official owner';
+      select.appendChild(placeholder);
+      materialOwnerOptions.forEach(function (owner) {
+        var option = document.createElement('option');
+        option.value = owner.official_id;
+        option.textContent = owner.full_name + ' (' + owner.official_id + ')';
+        select.appendChild(option);
+      });
+      ownerWrap.appendChild(ownerLabel);
+      ownerWrap.appendChild(search);
+      ownerWrap.appendChild(select);
+
+      var qtyWrap = document.createElement('div');
+      var qtyLabel = document.createElement('label');
+      qtyLabel.className = 'label';
+      qtyLabel.textContent = 'Quantity';
+      var quantity = document.createElement('input');
+      quantity.className = 'input';
+      quantity.type = 'number';
+      quantity.name = 'owner_quantities[]';
+      quantity.min = '0';
+      quantity.required = true;
+      qtyWrap.appendChild(qtyLabel);
+      qtyWrap.appendChild(quantity);
+
+      var actionWrap = document.createElement('div');
+      actionWrap.className = 'flex md:items-end';
+      var removeButton = document.createElement('button');
+      removeButton.type = 'button';
+      removeButton.className = 'btn btn-outline btn-sm w-full md:w-auto';
+      removeButton.textContent = 'Remove';
+      actionWrap.appendChild(removeButton);
+
+      var itemIdInput = document.createElement('input');
+      itemIdInput.type = 'hidden';
+      itemIdInput.name = 'allocation_item_ids[]';
+
+      row.appendChild(ownerWrap);
+      row.appendChild(qtyWrap);
+      row.appendChild(actionWrap);
+      row.appendChild(itemIdInput);
+      container.appendChild(row);
+
+      select.value = allocation && allocation.owner_official_id ? allocation.owner_official_id : '';
+      quantity.value = allocation && allocation.quantity !== undefined ? allocation.quantity : '';
+      itemIdInput.value = allocation && allocation.item_id ? allocation.item_id : '';
+
+      var optionEntries = Array.prototype.slice.call(select.options).map(function (option) {
         return {
           option: option,
           text: (option.textContent + ' ' + option.value).toLowerCase(),
@@ -344,7 +402,7 @@ if (($_GET['export'] ?? '') === 'csv') {
 
       search.addEventListener('input', function () {
         var term = search.value.trim().toLowerCase();
-        options.forEach(function (entry) {
+        optionEntries.forEach(function (entry) {
           entry.option.hidden = !entry.isPlaceholder && term !== '' && entry.text.indexOf(term) === -1;
         });
 
@@ -352,23 +410,49 @@ if (($_GET['export'] ?? '') === 'csv') {
           select.value = '';
         }
       });
+
+      removeButton.addEventListener('click', function () {
+        if (container.children.length > 1) {
+          row.remove();
+          return;
+        }
+
+        select.value = '';
+        quantity.value = '';
+        itemIdInput.value = '';
+        search.value = '';
+        search.dispatchEvent(new Event('input'));
+      });
     }
 
-    setupOwnerSearch(document.querySelector('#addMaterialModal form'));
+    function resetOwnerAllocations(form, allocations) {
+      var container = form.querySelector('[data-owner-allocations]');
+      container.innerHTML = '';
+      (allocations && allocations.length ? allocations : [{}]).forEach(function (allocation) {
+        createOwnerAllocationRow(container, allocation);
+      });
+    }
+
+    var materialForm = document.querySelector('#addMaterialModal form');
+    resetOwnerAllocations(materialForm);
+    document.querySelector('#addMaterialModal [data-add-owner-allocation]').addEventListener('click', function () {
+      createOwnerAllocationRow(materialForm.querySelector('[data-owner-allocations]'), {});
+    });
 
     document.querySelectorAll('[data-edit-material]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var form = document.querySelector('#addMaterialModal form');
         document.querySelector('#addMaterialModal h3').textContent = 'Edit Material';
-        form.querySelector('[data-owner-search]').value = '';
-        form.querySelector('[data-owner-search]').dispatchEvent(new Event('input'));
         form.elements.id.value = btn.dataset.id || '';
         form.elements.material_name.value = btn.dataset.name || '';
         form.elements.category_id.value = btn.dataset.categoryId || '';
         form.elements.description.value = btn.dataset.description || '';
         form.elements.unit_id.value = btn.dataset.unitId || '';
-        form.elements.owner_official_id.value = btn.dataset.ownerOfficialId || '';
-        form.elements.quantity.value = btn.dataset.quantity || 0;
+        resetOwnerAllocations(form, [{
+          item_id: btn.dataset.id || '',
+          owner_official_id: btn.dataset.ownerOfficialId || '',
+          quantity: btn.dataset.quantity || 0
+        }]);
         form.elements.unit_price.value = btn.dataset.unitPrice || 0;
         form.elements.date_added.value = btn.dataset.dateAdded || '';
       });
@@ -378,8 +462,8 @@ if (($_GET['export'] ?? '') === 'csv') {
         var form = document.querySelector('#addMaterialModal form');
         document.querySelector('#addMaterialModal h3').textContent = 'Add Material';
         form.reset();
-        form.querySelector('[data-owner-search]').dispatchEvent(new Event('input'));
         form.elements.id.value = '';
+        resetOwnerAllocations(form);
       });
     });
   </script>

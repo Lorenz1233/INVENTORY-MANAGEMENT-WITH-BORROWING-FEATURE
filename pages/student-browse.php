@@ -3,7 +3,7 @@ require_once __DIR__ . '/../partials/page-data.php';
 require_borrower();
 
 $categoryFilter = clean($_GET['category'] ?? '');
-$where = [equipment_condition('i', 'c'), 'i.status = "active"', 'i.available_quantity > 0'];
+$where = [equipment_condition('i', 'c'), 'i.status = "active"'];
 $params = [];
 
 if ($categoryFilter !== '') {
@@ -11,26 +11,14 @@ if ($categoryFilter !== '') {
     $params[] = $categoryFilter;
 }
 
-$equipmentRows = all_rows(
+$equipmentOwnerRows = all_rows(
     'SELECT i.*, c.category_name, u.unit_name,
             CONCAT(o.first_name, " ", o.last_name) AS owner_name,
-            ap.appointment_text,
-            item_totals.group_total_quantity,
-            item_totals.group_available_quantity
+            ap.appointment_text
      FROM items i
      LEFT JOIN category c ON c.category_id = i.category_id
      LEFT JOIN unit u ON u.unit_id = i.unit_id
      LEFT JOIN officials_masterlist o ON o.official_id = i.received_by_official_id
-     LEFT JOIN (
-        SELECT LOWER(gi.item_name) AS item_key,
-               gi.category_id,
-               SUM(gi.total_quantity) AS group_total_quantity,
-               SUM(gi.available_quantity) AS group_available_quantity
-        FROM items gi
-        LEFT JOIN category gc ON gc.category_id = gi.category_id
-        WHERE ' . equipment_condition('gi', 'gc') . '
-        GROUP BY LOWER(gi.item_name), gi.category_id
-     ) item_totals ON item_totals.item_key = LOWER(i.item_name) AND item_totals.category_id = i.category_id
      LEFT JOIN (
         SELECT item_id,
                GROUP_CONCAT(
@@ -43,9 +31,44 @@ $equipmentRows = all_rows(
         GROUP BY item_id
      ) ap ON ap.item_id = i.item_id
      WHERE ' . implode(' AND ', $where) . '
-     ORDER BY i.item_name',
+     ORDER BY i.item_name, o.last_name, o.first_name',
     $params
 );
+$equipmentRows = [];
+foreach ($equipmentOwnerRows as $row) {
+    $groupKey = strtolower((string) $row['item_name']) . '|' . (string) $row['category_id'];
+
+    if (!isset($equipmentRows[$groupKey])) {
+        $equipmentRows[$groupKey] = [
+            'item_name' => $row['item_name'],
+            'category_id' => $row['category_id'],
+            'category_name' => $row['category_name'],
+            'unit_name' => $row['unit_name'],
+            'description' => $row['description'],
+            'group_total_quantity' => 0,
+            'group_available_quantity' => 0,
+            'owner_options' => [],
+        ];
+    }
+
+    $equipmentRows[$groupKey]['group_total_quantity'] += (int) $row['total_quantity'];
+    $equipmentRows[$groupKey]['group_available_quantity'] += (int) $row['available_quantity'];
+
+    $ownerName = trim((string) ($row['owner_name'] ?? ''));
+    if ($ownerName !== '' && clean($row['received_by_official_id'] ?? '') !== '') {
+        $equipmentRows[$groupKey]['owner_options'][] = [
+            'item_id' => (int) $row['item_id'],
+            'owner_name' => $ownerName,
+            'owner_official_id' => $row['received_by_official_id'],
+            'total_quantity' => (int) $row['total_quantity'],
+            'available_quantity' => (int) $row['available_quantity'],
+            'appointment_text' => str_replace('||', "\n", (string) ($row['appointment_text'] ?? '')),
+        ];
+    }
+}
+$equipmentRows = array_values(array_filter($equipmentRows, function ($group) {
+    return (int) $group['group_available_quantity'] > 0 && !empty($group['owner_options']);
+}));
 $equipmentCategories = all_rows(
     'SELECT DISTINCT c.category_id, c.category_name
      FROM items i
@@ -129,33 +152,38 @@ $profileLine = ($currentUser['role'] ?? '') === 'faculty'
                 <p class="text-sm">Check back later or contact the equipment office.</p>
               </div>
             <?php else: foreach ($equipmentRows as $item):
-              $ownerName = trim((string) ($item['owner_name'] ?? ''));
-              $appointmentText = str_replace('||', "\n", (string) ($item['appointment_text'] ?? ''));
-              $groupTotal = (int) ($item['group_total_quantity'] ?? $item['total_quantity']);
-              $groupAvailable = (int) ($item['group_available_quantity'] ?? $item['available_quantity']);
+              $groupTotal = (int) $item['group_total_quantity'];
+              $groupAvailable = (int) $item['group_available_quantity'];
+              $availableOwners = array_values(array_filter($item['owner_options'], function ($owner) {
+                  return (int) $owner['available_quantity'] > 0;
+              }));
+              $ownerSummary = implode(', ', array_map(function ($owner) {
+                  return $owner['owner_name'] . ' (' . $owner['available_quantity'] . '/' . $owner['total_quantity'] . ')';
+              }, $item['owner_options']));
+              $ownerOptionsJson = json_encode($item['owner_options'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
             ?>
               <div class="border border-gray-200 rounded-md p-4 bg-white" data-searchable>
                 <p class="font-semibold text-navy"><?php echo h($item['item_name']); ?></p>
                 <p class="text-xs text-gray-500 mt-1"><?php echo h($item['category_name'] ?? 'Uncategorized'); ?> - <?php echo h($item['unit_name'] ?? 'pcs'); ?></p>
-                <p class="text-xs text-gray-500 mt-1">Owner: <strong class="text-navy"><?php echo h($ownerName ?: 'Unassigned'); ?></strong></p>
                 <p class="text-xs text-gray-500 mt-1">Catalog total: <strong class="text-navy"><?php echo h($groupTotal); ?></strong> total, <strong class="text-navy"><?php echo h($groupAvailable); ?></strong> available</p>
+                <p class="text-xs text-gray-500 mt-1">Owners: <strong class="text-navy"><?php echo h($ownerSummary); ?></strong></p>
                 <p class="text-sm text-gray-600 mt-3 min-h-[2.5rem]"><?php echo h(plain_description($item['description']) ?: 'No description.'); ?></p>
                 <div class="mt-3 rounded-md border border-gray-100 bg-gray-50 p-2 text-xs text-gray-600 min-h-[3.25rem]">
-                  <p class="font-semibold text-navy">Appointments</p>
-                  <?php if ($appointmentText !== ''): ?>
-                    <?php foreach (explode("\n", $appointmentText) as $appointment): ?>
-                      <p><?php echo h($appointment); ?></p>
-                    <?php endforeach; ?>
-                  <?php else: ?>
-                    <p class="text-gray-400">No accepted appointments yet.</p>
-                  <?php endif; ?>
+                  <p class="font-semibold text-navy">Owner Availability</p>
+                  <?php foreach ($item['owner_options'] as $owner): ?>
+                    <p><?php echo h($owner['owner_name']); ?>: <?php echo h($owner['available_quantity']); ?> available of <?php echo h($owner['total_quantity']); ?></p>
+                  <?php endforeach; ?>
                 </div>
                 <div class="mt-4 flex items-center justify-between">
-                  <span class="text-xs text-gray-500">Owner available: <strong class="text-navy"><?php echo h($item['available_quantity']); ?></strong></span>
-                  <?php if ($ownerName !== ''): ?>
-                    <button type="button" class="btn btn-primary btn-sm" data-modal-open="borrowModal" data-borrow-item data-id="<?php echo h($item['item_id']); ?>" data-name="<?php echo h($item['item_name']); ?>" data-owner="<?php echo h($ownerName); ?>" data-appointments="<?php echo h($appointmentText); ?>" data-available="<?php echo h($item['available_quantity']); ?>">Request</button>
+                  <span class="text-xs text-gray-500">Available: <strong class="text-navy"><?php echo h($groupAvailable); ?></strong></span>
+                  <?php if ($availableOwners): ?>
+                    <button type="button" class="btn btn-primary btn-sm"
+                      data-modal-open="borrowModal"
+                      data-borrow-item
+                      data-name="<?php echo h($item['item_name']); ?>"
+                      data-owner-options="<?php echo h($ownerOptionsJson); ?>">Request</button>
                   <?php else: ?>
-                    <button type="button" class="btn btn-outline btn-sm" disabled>Unassigned</button>
+                    <button type="button" class="btn btn-outline btn-sm" disabled>Unavailable</button>
                   <?php endif; ?>
                 </div>
               </div>
@@ -174,7 +202,7 @@ $profileLine = ($currentUser['role'] ?? '') === 'faculty'
           <div class="md:col-span-2"><label class="label">Item</label>
             <input class="input" name="equipment_name" readonly value="" /></div>
           <div class="md:col-span-2"><label class="label">Owner</label>
-            <input class="input" name="owner_name" readonly value="" /></div>
+            <select class="select" name="owner_item_id" data-owner-choice required></select></div>
           <div class="md:col-span-2 rounded-md border border-gray-100 bg-gray-50 p-3 text-sm text-gray-600">
             <p class="font-semibold text-navy text-xs uppercase tracking-wider">Existing appointments</p>
             <div class="mt-1 whitespace-pre-line" data-appointment-preview>No accepted appointments yet.</div>
@@ -194,18 +222,62 @@ $profileLine = ($currentUser['role'] ?? '') === 'faculty'
   </div>
   <script src="../js/shared.js"></script>
   <script>
+    function syncOwnerChoice(form) {
+      var ownerSelect = form.elements.owner_item_id;
+      var selectedOption = ownerSelect.options[ownerSelect.selectedIndex];
+      if (!selectedOption) {
+        form.elements.equipment_id.value = '';
+        form.elements.quantity.max = '';
+        document.querySelector('[data-appointment-preview]').textContent = 'No accepted appointments yet.';
+        return;
+      }
+
+      var available = selectedOption.dataset.available || '';
+      form.elements.equipment_id.value = selectedOption.value || '';
+      form.elements.quantity.max = available;
+      form.elements.quantity.value = available && Number(available) > 0 ? 1 : '';
+      document.querySelector('[data-appointment-preview]').textContent = selectedOption.dataset.appointments || 'No accepted appointments yet.';
+    }
+
     document.querySelectorAll('[data-borrow-item]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var form = document.querySelector('#borrowModal form');
-        form.elements.equipment_id.value = btn.dataset.id || '';
+        var ownerSelect = form.elements.owner_item_id;
+        var ownerOptions = [];
+
+        try {
+          ownerOptions = JSON.parse(btn.dataset.ownerOptions || '[]');
+        } catch (error) {
+          ownerOptions = [];
+        }
+
+        ownerSelect.innerHTML = '';
+        ownerOptions.forEach(function (owner) {
+          var option = document.createElement('option');
+          option.value = owner.item_id || '';
+          option.textContent = owner.owner_name + ' - ' + owner.available_quantity + ' available of ' + owner.total_quantity;
+          option.dataset.available = owner.available_quantity || 0;
+          option.dataset.appointments = owner.appointment_text || '';
+          option.disabled = Number(owner.available_quantity || 0) <= 0;
+          ownerSelect.appendChild(option);
+        });
+
+        var firstAvailable = Array.prototype.find.call(ownerSelect.options, function (option) {
+          return !option.disabled;
+        });
+        if (firstAvailable) {
+          ownerSelect.value = firstAvailable.value;
+        }
+
         form.elements.equipment_name.value = btn.dataset.name || '';
-        form.elements.owner_name.value = btn.dataset.owner || '';
-        document.querySelector('[data-appointment-preview]').textContent = btn.dataset.appointments || 'No accepted appointments yet.';
-        form.elements.quantity.max = btn.dataset.available || '';
-        form.elements.quantity.value = 1;
         form.elements.borrow_date.value = new Date().toISOString().slice(0, 10);
         form.elements.days_to_borrow.value = 1;
+        syncOwnerChoice(form);
       });
+    });
+
+    document.querySelector('[data-owner-choice]').addEventListener('change', function () {
+      syncOwnerChoice(document.querySelector('#borrowModal form'));
     });
   </script>
 </body>

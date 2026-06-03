@@ -38,7 +38,6 @@ try {
         respond_error('../pages/materials.php', 'missing', 'Material name is required.');
     }
 
-    $quantity = require_non_negative_int(post_value('quantity', '0'), 'Quantity');
     $dateAdded = normalized_date_or_today(post_value('date_added'));
 
     if ($unitPrice !== '' && !preg_match('/^\d+(\.\d{1,2})?$/', $unitPrice)) {
@@ -49,45 +48,58 @@ try {
 
     $categoryId = require_existing_category_id($pdo, post_value('category_id'), post_value('category'));
     $unitId = require_existing_unit_id($pdo, post_value('unit_id'), post_value('unit') ?: 'pcs');
-    $ownerOfficialId = require_existing_owner_official_id($pdo, $ownerOfficialId);
-    assert_item_not_duplicate($pdo, $materialName, $categoryId, $itemId, $ownerOfficialId);
+    $allocations = owner_allocations_from_post($pdo, 'owner_official_id', 'quantity', $itemId);
 
     $notes = trim($description . "\nType: Material" . ($unitPrice !== '' ? "\nUnit price: PHP " . $unitPrice : ''));
 
-    if ($itemId > 0) {
-        $stmt = db_exec(
-            $pdo,
-            'SELECT total_quantity, available_quantity, min_quantity_alert
-             FROM items
-             WHERE item_id = ?
-             FOR UPDATE',
-            [$itemId]
-        );
-        $currentItem = $stmt->fetch();
-
-        if (!$currentItem) {
-            throw new RuntimeException('Item not found.');
+    foreach ($allocations as $allocation) {
+        $allocationItemId = (int) $allocation['item_id'];
+        if ($allocationItemId <= 0 && $itemId > 0 && count($allocations) === 1) {
+            $allocationItemId = $itemId;
         }
 
-        $borrowedQuantity = max(0, (int) $currentItem['total_quantity'] - (int) $currentItem['available_quantity']);
-        if ($quantity < $borrowedQuantity) {
-            throw new RuntimeException('quantity_below_borrowed');
+        $ownerOfficialId = $allocation['owner_official_id'];
+        $quantity = (int) $allocation['quantity'];
+
+        if ($allocationItemId > 0) {
+            assert_item_not_duplicate($pdo, $materialName, $categoryId, $allocationItemId, $ownerOfficialId);
+
+            $stmt = db_exec(
+                $pdo,
+                'SELECT total_quantity, available_quantity, min_quantity_alert
+                 FROM items
+                 WHERE item_id = ?
+                 FOR UPDATE',
+                [$allocationItemId]
+            );
+            $currentItem = $stmt->fetch();
+
+            if (!$currentItem) {
+                throw new RuntimeException('Item not found.');
+            }
+
+            $borrowedQuantity = max(0, (int) $currentItem['total_quantity'] - (int) $currentItem['available_quantity']);
+            if ($quantity < $borrowedQuantity) {
+                throw new RuntimeException('quantity_below_borrowed');
+            }
+
+            $availableQuantity = $quantity - $borrowedQuantity;
+            $stockStatus = inventory_stock_status($availableQuantity, (int) $currentItem['min_quantity_alert']);
+
+            db_exec(
+                $pdo,
+                'UPDATE items
+                 SET item_name = ?, description = ?, unit_id = ?, category_id = ?,
+                     total_quantity = ?, available_quantity = ?, received_by_official_id = ?,
+                     date_added = ?, status = "active", stock_status = ?, updated_by_user_id = ?
+                 WHERE item_id = ?',
+                [$materialName, $notes, $unitId, $categoryId, $quantity, $availableQuantity, $ownerOfficialId, $dateAdded, $stockStatus, $actorUserId, $allocationItemId]
+            );
+            log_audit($pdo, 'item_update', 'items', $allocationItemId, ['item_name' => $materialName, 'type' => 'material', 'owner_official_id' => $ownerOfficialId]);
+            continue;
         }
 
-        $availableQuantity = $quantity - $borrowedQuantity;
-        $stockStatus = inventory_stock_status($availableQuantity, (int) $currentItem['min_quantity_alert']);
-
-        db_exec(
-            $pdo,
-            'UPDATE items
-             SET item_name = ?, description = ?, unit_id = ?, category_id = ?,
-                 total_quantity = ?, available_quantity = ?, received_by_official_id = ?,
-                 date_added = ?, status = "active", stock_status = ?, updated_by_user_id = ?
-             WHERE item_id = ?',
-            [$materialName, $notes, $unitId, $categoryId, $quantity, $availableQuantity, $ownerOfficialId, $dateAdded, $stockStatus, $actorUserId, $itemId]
-        );
-        log_audit($pdo, 'item_update', 'items', $itemId, ['item_name' => $materialName, 'type' => 'material', 'owner_official_id' => $ownerOfficialId]);
-    } else {
+        assert_item_not_duplicate($pdo, $materialName, $categoryId, 0, $ownerOfficialId);
         $stockStatus = inventory_stock_status($quantity);
 
         db_exec(
@@ -97,8 +109,8 @@ try {
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "active", ?)',
             [$materialName, $notes, $unitId, $categoryId, $quantity, $quantity, $ownerOfficialId, $actorUserId, $actorUserId, $dateAdded, $stockStatus]
         );
-        $itemId = (int) $pdo->lastInsertId();
-        log_audit($pdo, 'item_create', 'items', $itemId, ['item_name' => $materialName, 'type' => 'material', 'owner_official_id' => $ownerOfficialId]);
+        $newItemId = (int) $pdo->lastInsertId();
+        log_audit($pdo, 'item_create', 'items', $newItemId, ['item_name' => $materialName, 'type' => 'material', 'owner_official_id' => $ownerOfficialId]);
     }
 
     $pdo->commit();

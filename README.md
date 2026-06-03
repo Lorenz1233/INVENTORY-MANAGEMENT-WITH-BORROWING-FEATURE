@@ -132,13 +132,13 @@ When adding or editing an item:
 
 - Select the item category and unit.
 - Select an owner from the officials masterlist.
-- Enter the quantity owned by that selected official.
+- Add one or more owner allocations and enter the quantity owned by each official.
 - Use the owner search field to quickly filter officials by name or ID.
 - The system records the user who created or updated the item.
 
 Owner assignment is required for both manual entry and CSV import. The owner must exist in `officials_masterlist`.
 
-The same item name and category can be saved for different owners. For example, if Jenny owns 10 laptops and Mike owns 20 laptops, add two Laptop records with different owners. The catalog table shows both the owner quantity and the combined total quantity of 30 laptops.
+The same item name and category can have more than one owner. For example, if Mary owns 20 laptops and Jake owns 20 laptops, add both owner allocations under Laptop. Borrowers will see one Laptop card, then choose Mary or Jake in the request form. The catalog tables show each owner quantity and the combined total availability.
 
 ## Borrow Workflow
 
