@@ -132,10 +132,13 @@ When adding or editing an item:
 
 - Select the item category and unit.
 - Select an owner from the officials masterlist.
+- Enter the quantity owned by that selected official.
 - Use the owner search field to quickly filter officials by name or ID.
 - The system records the user who created or updated the item.
 
 Owner assignment is required for both manual entry and CSV import. The owner must exist in `officials_masterlist`.
+
+The same item name and category can be saved for different owners. For example, if Jenny owns 10 laptops and Mike owns 20 laptops, add two Laptop records with different owners. The catalog table shows both the owner quantity and the combined total quantity of 30 laptops.
 
 ## Borrow Workflow
 
@@ -197,6 +200,7 @@ material_name,category,unit,quantity,unit_price,description,date_added,owner_off
 Important CSV rules:
 
 - `owner_official_id` must match an official in `officials_masterlist`.
+- Repeat the same equipment/material name with a different `owner_official_id` to split ownership.
 - `quantity` must be a whole number and cannot be negative.
 - `unit_price` accepts up to two decimal places.
 - `date_added` should use `YYYY-MM-DD` when provided.

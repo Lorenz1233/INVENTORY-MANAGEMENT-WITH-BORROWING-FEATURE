@@ -9,7 +9,14 @@ $itemOwnerWhere = is_admin_user() ? '1=1' : 'i.received_by_official_id = ?';
 $itemOwnerParams = is_admin_user() ? [] : [current_official_id()];
 
 $totalEquipment = (int) one_value(
-    "SELECT COUNT(*) FROM items i LEFT JOIN category c ON c.category_id = i.category_id WHERE {$equipmentWhere} AND {$itemOwnerWhere}",
+    "SELECT COUNT(*)
+     FROM (
+        SELECT LOWER(i.item_name) AS item_key, i.category_id
+        FROM items i
+        LEFT JOIN category c ON c.category_id = i.category_id
+        WHERE {$equipmentWhere} AND {$itemOwnerWhere}
+        GROUP BY LOWER(i.item_name), i.category_id
+     ) equipment_groups",
     $itemOwnerParams
 );
 $pendingRequests = (int) one_value(

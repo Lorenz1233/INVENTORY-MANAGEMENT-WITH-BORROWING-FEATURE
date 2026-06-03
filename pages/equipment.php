@@ -35,7 +35,9 @@ $equipmentRows = all_rows(
                 NULLIF(TRIM(CONCAT(COALESCE(cm.first_name, ""), " ", COALESCE(cm.last_name, ""))), ""),
                 NULLIF(TRIM(CONCAT(COALESCE(co.first_name, ""), " ", COALESCE(co.last_name, ""))), ""),
                 creator.username
-            ) AS added_by_name
+            ) AS added_by_name,
+            item_totals.group_total_quantity,
+            item_totals.group_available_quantity
      FROM items i
      LEFT JOIN category c ON c.category_id = i.category_id
      LEFT JOIN unit u ON u.unit_id = i.unit_id
@@ -43,6 +45,16 @@ $equipmentRows = all_rows(
      LEFT JOIN users creator ON creator.user_id = i.created_by_user_id
      LEFT JOIN master_list cm ON cm.student_id = creator.student_id
      LEFT JOIN officials_masterlist co ON co.official_id = creator.official_id
+     LEFT JOIN (
+        SELECT LOWER(gi.item_name) AS item_key,
+               gi.category_id,
+               SUM(gi.total_quantity) AS group_total_quantity,
+               SUM(gi.available_quantity) AS group_available_quantity
+        FROM items gi
+        LEFT JOIN category gc ON gc.category_id = gi.category_id
+        WHERE ' . equipment_condition('gi', 'gc') . '
+        GROUP BY LOWER(gi.item_name), gi.category_id
+     ) item_totals ON item_totals.item_key = LOWER(i.item_name) AND item_totals.category_id = i.category_id
      WHERE ' . implode(' AND ', $where) . '
      ORDER BY ' . $orderBy,
     $params
@@ -156,17 +168,20 @@ $facultyOwnerRows = all_rows(
         <div class="overflow-x-auto" id="equipmentTable">
           <table class="table">
             <thead><tr>
-              <th>Item Code</th><th>Item Name</th><th>Category</th><th>Qty</th><th>Available</th>
+              <th>Item Code</th><th>Item Name</th><th>Category</th><th>Owner Qty</th><th>Owner Available</th>
+              <th>Total Qty</th><th>Total Available</th>
               <th>Owner</th><th>Added By</th><th>Condition</th><th>Status</th><th class="text-right">Actions</th>
             </tr></thead>
             <tbody>
               <?php if (!$equipmentRows): ?>
-                <tr><td colspan="10"><div class="empty"><div class="icon">-</div><p class="font-medium text-gray-700">No equipment yet</p><p class="text-sm">Click Add Equipment to add your first item.</p></div></td></tr>
+                <tr><td colspan="12"><div class="empty"><div class="icon">-</div><p class="font-medium text-gray-700">No equipment yet</p><p class="text-sm">Click Add Equipment to add your first item.</p></div></td></tr>
               <?php else: foreach ($equipmentRows as $item):
                 $itemCode = meta_value($item['description'], 'Item code') ?: $item['item_id'];
                 $condition = meta_value($item['description'], 'Condition') ?: 'Good';
                 $displayStatus = $item['status'] === 'inactive' ? 'Maintenance' : ((int) $item['available_quantity'] < (int) $item['total_quantity'] ? 'Borrowed' : 'Available');
                 $description = plain_description($item['description']);
+                $groupTotal = (int) ($item['group_total_quantity'] ?? $item['total_quantity']);
+                $groupAvailable = (int) ($item['group_available_quantity'] ?? $item['available_quantity']);
               ?>
                 <tr data-searchable>
                   <td><?php echo h($itemCode); ?></td>
@@ -174,6 +189,8 @@ $facultyOwnerRows = all_rows(
                   <td><?php echo h($item['category_name'] ?? 'Uncategorized'); ?></td>
                   <td><?php echo h($item['total_quantity']); ?></td>
                   <td><?php echo h($item['available_quantity']); ?></td>
+                  <td><?php echo h($groupTotal); ?></td>
+                  <td><?php echo h($groupAvailable); ?></td>
                   <td><?php echo h($item['owner_name'] ?: 'Unassigned'); ?></td>
                   <td><?php echo h($item['added_by_name'] ?: 'Unknown'); ?></td>
                   <td><?php echo h($condition); ?></td>
@@ -242,7 +259,7 @@ $facultyOwnerRows = all_rows(
               <?php endforeach; ?>
             </select>
           </div>
-          <div><label class="label">Quantity</label><input class="input" type="number" name="quantity" min="0" required /></div>
+          <div><label class="label">Owner quantity</label><input class="input" type="number" name="quantity" min="0" required /></div>
           <div><label class="label">Condition</label>
             <select class="select" name="condition"><option>Good</option><option>Fair</option><option>Needs repair</option></select>
           </div>

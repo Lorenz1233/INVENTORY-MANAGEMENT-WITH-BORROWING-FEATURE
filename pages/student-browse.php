@@ -14,11 +14,23 @@ if ($categoryFilter !== '') {
 $equipmentRows = all_rows(
     'SELECT i.*, c.category_name, u.unit_name,
             CONCAT(o.first_name, " ", o.last_name) AS owner_name,
-            ap.appointment_text
+            ap.appointment_text,
+            item_totals.group_total_quantity,
+            item_totals.group_available_quantity
      FROM items i
      LEFT JOIN category c ON c.category_id = i.category_id
      LEFT JOIN unit u ON u.unit_id = i.unit_id
      LEFT JOIN officials_masterlist o ON o.official_id = i.received_by_official_id
+     LEFT JOIN (
+        SELECT LOWER(gi.item_name) AS item_key,
+               gi.category_id,
+               SUM(gi.total_quantity) AS group_total_quantity,
+               SUM(gi.available_quantity) AS group_available_quantity
+        FROM items gi
+        LEFT JOIN category gc ON gc.category_id = gi.category_id
+        WHERE ' . equipment_condition('gi', 'gc') . '
+        GROUP BY LOWER(gi.item_name), gi.category_id
+     ) item_totals ON item_totals.item_key = LOWER(i.item_name) AND item_totals.category_id = i.category_id
      LEFT JOIN (
         SELECT item_id,
                GROUP_CONCAT(
@@ -119,11 +131,14 @@ $profileLine = ($currentUser['role'] ?? '') === 'faculty'
             <?php else: foreach ($equipmentRows as $item):
               $ownerName = trim((string) ($item['owner_name'] ?? ''));
               $appointmentText = str_replace('||', "\n", (string) ($item['appointment_text'] ?? ''));
+              $groupTotal = (int) ($item['group_total_quantity'] ?? $item['total_quantity']);
+              $groupAvailable = (int) ($item['group_available_quantity'] ?? $item['available_quantity']);
             ?>
               <div class="border border-gray-200 rounded-md p-4 bg-white" data-searchable>
                 <p class="font-semibold text-navy"><?php echo h($item['item_name']); ?></p>
                 <p class="text-xs text-gray-500 mt-1"><?php echo h($item['category_name'] ?? 'Uncategorized'); ?> - <?php echo h($item['unit_name'] ?? 'pcs'); ?></p>
                 <p class="text-xs text-gray-500 mt-1">Owner: <strong class="text-navy"><?php echo h($ownerName ?: 'Unassigned'); ?></strong></p>
+                <p class="text-xs text-gray-500 mt-1">Catalog total: <strong class="text-navy"><?php echo h($groupTotal); ?></strong> total, <strong class="text-navy"><?php echo h($groupAvailable); ?></strong> available</p>
                 <p class="text-sm text-gray-600 mt-3 min-h-[2.5rem]"><?php echo h(plain_description($item['description']) ?: 'No description.'); ?></p>
                 <div class="mt-3 rounded-md border border-gray-100 bg-gray-50 p-2 text-xs text-gray-600 min-h-[3.25rem]">
                   <p class="font-semibold text-navy">Appointments</p>
@@ -136,7 +151,7 @@ $profileLine = ($currentUser['role'] ?? '') === 'faculty'
                   <?php endif; ?>
                 </div>
                 <div class="mt-4 flex items-center justify-between">
-                  <span class="text-xs text-gray-500">Available: <strong class="text-navy"><?php echo h($item['available_quantity']); ?></strong></span>
+                  <span class="text-xs text-gray-500">Owner available: <strong class="text-navy"><?php echo h($item['available_quantity']); ?></strong></span>
                   <?php if ($ownerName !== ''): ?>
                     <button type="button" class="btn btn-primary btn-sm" data-modal-open="borrowModal" data-borrow-item data-id="<?php echo h($item['item_id']); ?>" data-name="<?php echo h($item['item_name']); ?>" data-owner="<?php echo h($ownerName); ?>" data-appointments="<?php echo h($appointmentText); ?>" data-available="<?php echo h($item['available_quantity']); ?>">Request</button>
                   <?php else: ?>

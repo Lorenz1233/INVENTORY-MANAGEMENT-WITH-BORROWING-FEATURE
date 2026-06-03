@@ -156,7 +156,7 @@ function save_item_csv_row(PDO $pdo, array $row, array $headers, $dataset)
     );
     $actorUserId = (int) ($_SESSION['user_id'] ?? 0);
 
-    assert_item_not_duplicate($pdo, $itemName, $categoryId);
+    assert_item_not_duplicate($pdo, $itemName, $categoryId, 0, $ownerOfficialId);
 
     if ($dataset === 'materials') {
         $unitPrice = csv_value($row, $headers, ['unit_price', 'price']);

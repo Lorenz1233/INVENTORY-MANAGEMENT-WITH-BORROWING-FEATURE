@@ -113,7 +113,7 @@ $csvImportFormats = [
             ['label' => 'Download items example', 'href' => '../assets/samples/items-import-example.csv'],
             ['label' => 'Download equipments example', 'href' => '../assets/samples/equipments-import-example.csv'],
         ],
-        'notes' => ['owner_official_id must match an official in the masterlist.', 'quantity must be a whole number.', 'date_added must use YYYY-MM-DD when provided.'],
+        'notes' => ['owner_official_id must match an official in the masterlist.', 'Repeat the same item name with a different owner to split stock ownership.', 'quantity must be a whole number.', 'date_added must use YYYY-MM-DD when provided.'],
     ],
     'materials' => [
         'label' => 'Materials',
@@ -122,7 +122,7 @@ $csvImportFormats = [
         'headers' => ['material_name', 'category', 'unit', 'quantity', 'unit_price', 'description', 'date_added', 'owner_official_id'],
         'example' => ['Bond Paper A4', 'Office Supplies', 'ream', '20', '245.00', 'White copy paper', '2026-05-27', 'OFF003'],
         'download' => '../assets/samples/materials-import-example.csv',
-        'notes' => ['owner_official_id must match an official in the masterlist.', 'unit_price accepts up to two decimal places.', 'date_added must use YYYY-MM-DD when provided.'],
+        'notes' => ['owner_official_id must match an official in the masterlist.', 'Repeat the same material name with a different owner to split stock ownership.', 'unit_price accepts up to two decimal places.', 'date_added must use YYYY-MM-DD when provided.'],
     ],
 ];
 

@@ -1429,19 +1429,27 @@ function inventory_stock_status($availableQuantity, $threshold = 5)
     return $availableQuantity <= $threshold ? 'low_stock' : 'available';
 }
 
-function assert_item_not_duplicate(PDO $pdo, $itemName, $categoryId, $itemId = 0)
+function assert_item_not_duplicate(PDO $pdo, $itemName, $categoryId, $itemId = 0, $ownerOfficialId = null)
 {
+    $params = [$itemName, $categoryId, (int) $itemId];
+    $ownerSql = '';
+
+    if ($ownerOfficialId !== null) {
+        $ownerSql = ' AND COALESCE(received_by_official_id, "") = ?';
+        $params[] = clean($ownerOfficialId);
+    }
+
     $stmt = db_exec(
         $pdo,
         'SELECT item_id
          FROM items
-         WHERE LOWER(item_name) = LOWER(?) AND category_id = ? AND item_id <> ?
+         WHERE LOWER(item_name) = LOWER(?) AND category_id = ? AND item_id <> ?' . $ownerSql . '
          LIMIT 1',
-        [$itemName, $categoryId, (int) $itemId]
+        $params
     );
 
     if ($stmt->fetch()) {
-        throw new RuntimeException('Duplicate item under the same category.');
+        throw new RuntimeException('Duplicate item under the same category and owner.');
     }
 }
 

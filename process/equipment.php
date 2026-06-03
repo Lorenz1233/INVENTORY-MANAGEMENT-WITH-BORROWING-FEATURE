@@ -48,7 +48,7 @@ try {
     $categoryId = require_existing_category_id($pdo, post_value('category_id'), post_value('category'));
     $unitId = require_existing_unit_id($pdo, post_value('unit_id'), post_value('unit') ?: 'pcs');
     $ownerOfficialId = require_existing_owner_official_id($pdo, $ownerOfficialId);
-    assert_item_not_duplicate($pdo, $itemName, $categoryId, $itemId);
+    assert_item_not_duplicate($pdo, $itemName, $categoryId, $itemId, $ownerOfficialId);
 
     $notes = trim($description . "\nType: Equipment\nItem code: " . $itemCode . "\nCondition: " . $condition);
 

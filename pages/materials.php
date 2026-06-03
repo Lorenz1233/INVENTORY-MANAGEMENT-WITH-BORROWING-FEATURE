@@ -26,7 +26,9 @@ $materialRows = all_rows(
                 NULLIF(TRIM(CONCAT(COALESCE(cm.first_name, ""), " ", COALESCE(cm.last_name, ""))), ""),
                 NULLIF(TRIM(CONCAT(COALESCE(co.first_name, ""), " ", COALESCE(co.last_name, ""))), ""),
                 creator.username
-            ) AS added_by_name
+            ) AS added_by_name,
+            item_totals.group_total_quantity,
+            item_totals.group_available_quantity
      FROM items i
      LEFT JOIN category c ON c.category_id = i.category_id
      LEFT JOIN unit u ON u.unit_id = i.unit_id
@@ -34,6 +36,16 @@ $materialRows = all_rows(
      LEFT JOIN users creator ON creator.user_id = i.created_by_user_id
      LEFT JOIN master_list cm ON cm.student_id = creator.student_id
      LEFT JOIN officials_masterlist co ON co.official_id = creator.official_id
+     LEFT JOIN (
+        SELECT LOWER(gi.item_name) AS item_key,
+               gi.category_id,
+               SUM(gi.total_quantity) AS group_total_quantity,
+               SUM(gi.available_quantity) AS group_available_quantity
+        FROM items gi
+        LEFT JOIN category gc ON gc.category_id = gi.category_id
+        WHERE ' . material_condition('gi', 'gc') . '
+        GROUP BY LOWER(gi.item_name), gi.category_id
+     ) item_totals ON item_totals.item_key = LOWER(i.item_name) AND item_totals.category_id = i.category_id
      WHERE ' . implode(' AND ', $where) . '
      ORDER BY ' . $orderBy,
     $params
@@ -59,7 +71,10 @@ $facultyOwnerRows = all_rows(
      FROM officials_masterlist o
      ORDER BY o.last_name, o.first_name'
 );
-$totalMaterials = count($materialRows);
+$materialGroups = array_unique(array_map(function ($row) {
+    return strtolower((string) $row['item_name']) . '|' . (string) $row['category_id'];
+}, $materialRows));
+$totalMaterials = count($materialGroups);
 $totalQuantity = array_sum(array_map(function ($row) {
     return (int) $row['total_quantity'];
 }, $materialRows));
@@ -75,7 +90,7 @@ if (($_GET['export'] ?? '') === 'csv') {
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename="campus-materials.csv"');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['Material', 'Category', 'Unit', 'Quantity', 'Unit Price', 'Total Value', 'Date Added']);
+    fputcsv($out, ['Material', 'Category', 'Unit', 'Owner Quantity', 'Catalog Total Quantity', 'Unit Price', 'Owner Value', 'Owner', 'Date Added']);
 
     foreach ($materialRows as $row) {
         $unitPrice = unit_price_from_description($row['description']);
@@ -84,8 +99,10 @@ if (($_GET['export'] ?? '') === 'csv') {
             $row['category_name'] ?? 'Uncategorized',
             $row['unit_name'] ?? 'pcs',
             $row['total_quantity'],
+            $row['group_total_quantity'] ?? $row['total_quantity'],
             money($unitPrice),
             money($unitPrice * (int) $row['total_quantity']),
+            $row['owner_name'] ?? '',
             $row['date_added'],
         ]);
     }
@@ -211,22 +228,24 @@ if (($_GET['export'] ?? '') === 'csv') {
         <div class="overflow-x-auto" id="materialsTable">
           <table class="table">
             <thead><tr>
-              <th>Material</th><th>Category</th><th>Unit</th><th>Quantity</th><th>Unit Price</th>
-              <th>Total Value</th><th>Owner</th><th>Date Added</th><th>Added By</th><th class="text-right">Actions</th>
+              <th>Material</th><th>Category</th><th>Unit</th><th>Owner Qty</th><th>Total Qty</th><th>Unit Price</th>
+              <th>Owner Value</th><th>Owner</th><th>Date Added</th><th>Added By</th><th class="text-right">Actions</th>
             </tr></thead>
             <tbody>
               <?php if (!$materialRows): ?>
-                <tr><td colspan="10"><div class="empty"><div class="icon">-</div><p class="font-medium text-gray-700">No materials yet</p><p class="text-sm">Materials added by staff will appear here.</p></div></td></tr>
+                <tr><td colspan="11"><div class="empty"><div class="icon">-</div><p class="font-medium text-gray-700">No materials yet</p><p class="text-sm">Materials added by staff will appear here.</p></div></td></tr>
               <?php else: foreach ($materialRows as $item):
                 $unitPrice = unit_price_from_description($item['description']);
                 $lineValue = $unitPrice * (int) $item['total_quantity'];
                 $description = plain_description($item['description']);
+                $groupTotal = (int) ($item['group_total_quantity'] ?? $item['total_quantity']);
               ?>
                 <tr data-searchable>
                   <td><?php echo h($item['item_name']); ?></td>
                   <td><?php echo h($item['category_name'] ?? 'Uncategorized'); ?></td>
                   <td><?php echo h($item['unit_name'] ?? 'pcs'); ?></td>
                   <td><?php echo h($item['total_quantity']); ?></td>
+                  <td><?php echo h($groupTotal); ?></td>
                   <td><?php echo money($unitPrice); ?></td>
                   <td><?php echo money($lineValue); ?></td>
                   <td><?php echo h($item['owner_name'] ?: 'Unassigned'); ?></td>
@@ -294,7 +313,7 @@ if (($_GET['export'] ?? '') === 'csv') {
               <?php endforeach; ?>
             </select>
           </div>
-          <div><label class="label">Quantity</label><input class="input" type="number" name="quantity" min="0" /></div>
+          <div><label class="label">Owner quantity</label><input class="input" type="number" name="quantity" min="0" /></div>
           <div><label class="label">Unit price (PHP)</label><input class="input" type="number" step="0.01" name="unit_price" min="0" /></div>
           <div><label class="label">Date added</label><input class="input" type="date" name="date_added" /></div>
           <div class="md:col-span-2 flex justify-end gap-2">
