@@ -3,29 +3,74 @@ require_once __DIR__ . '/../partials/page-data.php';
 require_admin();
 
 $equipmentWhere = equipment_condition('i', 'c');
-$totalEquipment = (int) one_value("SELECT COUNT(*) FROM items i LEFT JOIN category c ON c.category_id = i.category_id WHERE {$equipmentWhere}");
-$pendingRequests = (int) one_value('SELECT COUNT(*) FROM borrow_request WHERE status = "PENDING"');
-$activeBorrowings = (int) one_value('SELECT COUNT(*) FROM transactions WHERE status IN ("PENDING", "ONGOING")');
-$returnedItems = (int) one_value('SELECT COUNT(*) FROM transactions WHERE status = "RETURNED"');
+[$requestOwnerWhere, $requestOwnerParams] = borrow_owner_filter_sql('i', 'br');
+[$transactionOwnerWhere, $transactionOwnerParams] = transaction_owner_filter_sql('i', 'br');
+$itemOwnerWhere = is_admin_user() ? '1=1' : 'i.received_by_official_id = ?';
+$itemOwnerParams = is_admin_user() ? [] : [current_official_id()];
+
+$totalEquipment = (int) one_value(
+    "SELECT COUNT(*) FROM items i LEFT JOIN category c ON c.category_id = i.category_id WHERE {$equipmentWhere} AND {$itemOwnerWhere}",
+    $itemOwnerParams
+);
+$pendingRequests = (int) one_value(
+    'SELECT COUNT(*)
+     FROM borrow_request br
+     JOIN items i ON i.item_id = br.item_id
+     WHERE br.status = "PENDING" AND ' . $requestOwnerWhere,
+    $requestOwnerParams
+);
+$activeBorrowings = (int) one_value(
+    'SELECT COUNT(*)
+     FROM transactions t
+     JOIN borrow_request br ON br.request_id = t.request_id
+     JOIN items i ON i.item_id = t.item_id
+     WHERE t.status IN ("PENDING", "ONGOING") AND ' . $transactionOwnerWhere,
+    $transactionOwnerParams
+);
+$returnedItems = (int) one_value(
+    'SELECT COUNT(*)
+     FROM transactions t
+     JOIN borrow_request br ON br.request_id = t.request_id
+     JOIN items i ON i.item_id = t.item_id
+     WHERE t.status = "RETURNED" AND ' . $transactionOwnerWhere,
+    $transactionOwnerParams
+);
 $totalStudents = (int) one_value('SELECT COUNT(*) FROM master_list');
 $systemUsers = (int) one_value('SELECT COUNT(*) FROM users WHERE role IN ("admin", "faculty")');
 $recentRequests = all_rows(
     'SELECT br.request_id, br.request_date, br.status, br.created_at, i.item_name,
-            CONCAT(m.first_name, " ", m.last_name) AS borrower_name
+            COALESCE(
+                NULLIF(TRIM(CONCAT(COALESCE(m.first_name, ""), " ", COALESCE(m.last_name, ""))), ""),
+                NULLIF(TRIM(CONCAT(COALESCE(bo.first_name, ""), " ", COALESCE(bo.last_name, ""))), ""),
+                borrower.username
+            ) AS borrower_name
      FROM borrow_request br
      JOIN items i ON i.item_id = br.item_id
-     JOIN master_list m ON m.student_id = br.student_id
+     LEFT JOIN users borrower ON borrower.user_id = br.borrower_user_id
+     LEFT JOIN master_list m ON m.student_id = COALESCE(borrower.student_id, br.student_id)
+     LEFT JOIN officials_masterlist bo ON bo.official_id = borrower.official_id
+     WHERE ' . $requestOwnerWhere . '
      ORDER BY br.created_at DESC
-     LIMIT 5'
+     LIMIT 5',
+    $requestOwnerParams
 );
 $recentTransactions = all_rows(
     'SELECT t.transaction_id, t.status, t.created_at, i.item_name,
-            CONCAT(m.first_name, " ", m.last_name) AS borrower_name
+            COALESCE(
+                NULLIF(TRIM(CONCAT(COALESCE(m.first_name, ""), " ", COALESCE(m.last_name, ""))), ""),
+                NULLIF(TRIM(CONCAT(COALESCE(bo.first_name, ""), " ", COALESCE(bo.last_name, ""))), ""),
+                borrower.username
+            ) AS borrower_name
      FROM transactions t
+     JOIN borrow_request br ON br.request_id = t.request_id
      JOIN items i ON i.item_id = t.item_id
-     JOIN master_list m ON m.student_id = t.student_id
+     LEFT JOIN users borrower ON borrower.user_id = COALESCE(t.borrower_user_id, br.borrower_user_id)
+     LEFT JOIN master_list m ON m.student_id = COALESCE(borrower.student_id, t.student_id)
+     LEFT JOIN officials_masterlist bo ON bo.official_id = borrower.official_id
+     WHERE ' . $transactionOwnerWhere . '
      ORDER BY t.created_at DESC
-     LIMIT 5'
+     LIMIT 5',
+    $transactionOwnerParams
 );
 $quickActivity = [];
 foreach ($recentRequests as $request) {
@@ -50,7 +95,7 @@ $quickActivity = array_slice($quickActivity, 0, 6);
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Admin Dashboard • MSU-MCEST CEMS</title>
+  <title>Admin Dashboard • MSU-MCEST</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="../css/app.css" />
   <script>
@@ -67,12 +112,17 @@ $quickActivity = array_slice($quickActivity, 0, 6);
     <img class="brand-logo" src="../assets/images/logo.png" width="44" height="44" alt="MSU-MCEST logo" />
     <div>
       <div class="text-sm font-semibold leading-tight">MSU-MCEST</div>
-      <div class="text-xs text-white/60">Equipment Mgmt</div>
+      <div class="text-xs text-white/60">Inventory System</div>
     </div>
   </div>
   <nav class="flex-1 py-4 text-sm">
     <p class="px-5 mt-3 first:mt-0 text-[11px] uppercase tracking-wider text-white/40 mb-2">Overview</p>
     <a href="admin-dashboard.php" class="nav-link active">Dashboard</a>
+    <?php if (($currentUser['role'] ?? '') === 'faculty'): ?>
+    <p class="px-5 mt-3 first:mt-0 text-[11px] uppercase tracking-wider text-white/40 mb-2">Borrow</p>
+    <a href="student-browse.php" class="nav-link">Browse Equipment</a>
+    <a href="student-requests.php" class="nav-link">My Requests</a>
+    <?php endif; ?>
     <p class="px-5 mt-3 first:mt-0 text-[11px] uppercase tracking-wider text-white/40 mb-2">Catalog</p>
     <a href="equipment.php" class="nav-link">Equipment</a>
     <a href="materials.php" class="nav-link">Campus Materials</a>
@@ -113,6 +163,19 @@ $quickActivity = array_slice($quickActivity, 0, 6);
     </header>
 
     <main class="p-6 space-y-6">
+      <?php if (($currentUser['role'] ?? '') === 'faculty'): ?>
+      <section class="card bg-navy text-white border-navy">
+        <div class="card-body flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p class="text-white/60 text-xs uppercase tracking-wider">Faculty borrowing</p>
+            <h2 class="text-xl font-semibold mt-1">Request campus equipment</h2>
+            <p class="text-white/70 text-sm mt-1">Browse available items and track your own requests.</p>
+          </div>
+          <a href="student-browse.php" class="btn btn-gold">Browse Equipment</a>
+        </div>
+      </section>
+      <?php endif; ?>
+
       <section class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <div class="card">
         <div class="card-body">

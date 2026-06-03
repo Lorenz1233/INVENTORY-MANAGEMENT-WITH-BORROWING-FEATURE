@@ -1,16 +1,16 @@
-item_name,item_code,category,unit,quantity,condition,description,date_added
-Portable Projector,EQ-TST-2001,Electronics,pcs,6,Good,HD classroom projector for presentations,2026-05-28
-HDMI Cable 5m,EQ-TST-2002,Electronics,pcs,25,Good,Long cable for projector and display setup,2026-05-28
-Tripod Stand,EQ-TST-2003,Media Equipment,pcs,10,Good,Adjustable tripod for cameras and lights,2026-05-28
-Wireless Presenter,EQ-TST-2004,Electronics,pcs,12,Good,Slide clicker with laser pointer,2026-05-28
-Document Camera,EQ-TST-2005,Laboratory,pcs,4,Fair,Visual presenter for live document display,2026-05-28
-Extension Cord 10m,EQ-TST-2006,Electrical,pcs,18,Good,Heavy duty extension cord for events,2026-05-28
-PA Speaker,EQ-TST-2007,Audio Equipment,pcs,8,Good,Portable public address speaker,2026-05-28
-Wireless Microphone Set,EQ-TST-2008,Audio Equipment,set,5,Good,Dual wireless microphone kit,2026-05-28
-Folding Table,EQ-TST-2009,Furniture,pcs,20,Good,Portable table for seminars and workshops,2026-05-28
-Training Chair,EQ-TST-2010,Furniture,pcs,40,Good,Stackable chair for training rooms,2026-05-28
-Safety Helmet,EQ-TST-2011,Safety Equipment,pcs,30,Good,Protective helmet for laboratory and field work,2026-05-28
-First Aid Kit,EQ-TST-2012,Safety Equipment,kit,7,Good,Emergency medical supply kit,2026-05-28
-Network Switch 8-Port,EQ-TST-2013,Networking,pcs,6,Good,Small network switch for computer labs,2026-05-28
-Crimping Tool,EQ-TST-2014,Networking,pcs,9,Fair,Tool for terminating network cables,2026-05-28
-Digital Weighing Scale,EQ-TST-2015,Laboratory,pcs,3,Good,Precision scale for lab measurements,2026-05-28
+item_name,item_code,category,unit,quantity,condition,description,date_added,owner_official_id
+Portable Projector,EQ-TST-2001,Electronics,pcs,6,Good,HD classroom projector for presentations,2026-05-28,OFF001
+HDMI Cable 5m,EQ-TST-2002,Electronics,pcs,25,Good,Long cable for projector and display setup,2026-05-28,OFF001
+Tripod Stand,EQ-TST-2003,Media Equipment,pcs,10,Good,Adjustable tripod for cameras and lights,2026-05-28,OFF002
+Wireless Presenter,EQ-TST-2004,Electronics,pcs,12,Good,Slide clicker with laser pointer,2026-05-28,OFF001
+Document Camera,EQ-TST-2005,Laboratory,pcs,4,Fair,Visual presenter for live document display,2026-05-28,OFF002
+Extension Cord 10m,EQ-TST-2006,Electrical,pcs,18,Good,Heavy duty extension cord for events,2026-05-28,OFF001
+PA Speaker,EQ-TST-2007,Audio Equipment,pcs,8,Good,Portable public address speaker,2026-05-28,OFF003
+Wireless Microphone Set,EQ-TST-2008,Audio Equipment,set,5,Good,Dual wireless microphone kit,2026-05-28,OFF003
+Folding Table,EQ-TST-2009,Furniture,pcs,20,Good,Portable table for seminars and workshops,2026-05-28,OFF001
+Training Chair,EQ-TST-2010,Furniture,pcs,40,Good,Stackable chair for training rooms,2026-05-28,OFF001
+Safety Helmet,EQ-TST-2011,Safety Equipment,pcs,30,Good,Protective helmet for laboratory and field work,2026-05-28,OFF002
+First Aid Kit,EQ-TST-2012,Safety Equipment,kit,7,Good,Emergency medical supply kit,2026-05-28,OFF002
+Network Switch 8-Port,EQ-TST-2013,Networking,pcs,6,Good,Small network switch for computer labs,2026-05-28,OFF001
+Crimping Tool,EQ-TST-2014,Networking,pcs,9,Fair,Tool for terminating network cables,2026-05-28,OFF001
+Digital Weighing Scale,EQ-TST-2015,Laboratory,pcs,3,Good,Precision scale for lab measurements,2026-05-28,OFF002

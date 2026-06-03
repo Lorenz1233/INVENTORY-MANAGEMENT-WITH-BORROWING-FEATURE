@@ -20,7 +20,7 @@ $authorizationCandidateRows = all_rows(
      FROM users u
      LEFT JOIN master_list m ON m.student_id = u.student_id
      LEFT JOIN officials_masterlist o ON o.official_id = u.official_id
-     WHERE u.is_active = 1
+     WHERE u.is_active = 1 AND COALESCE(u.approval_status, "approved") = "approved"
      ORDER BY u.username'
 );
 $officialRows = array_values(array_filter($userRows, function ($user) {
@@ -32,7 +32,7 @@ $officialRows = array_values(array_filter($userRows, function ($user) {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>System Users - MSU-MCEST CEMS</title>
+  <title>System Users - MSU-MCEST</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="../css/app.css" />
   <script>
@@ -46,7 +46,7 @@ $officialRows = array_values(array_filter($userRows, function ($user) {
 <aside class="sidebar hidden md:flex md:flex-col w-64 bg-navy text-white fixed inset-y-0 left-0 z-30">
   <div class="px-5 py-5 border-b border-white/10 flex items-center gap-3">
     <img class="brand-logo" src="../assets/images/logo.png" width="44" height="44" alt="MSU-MCEST logo" />
-    <div><div class="text-sm font-semibold leading-tight">MSU-MCEST</div><div class="text-xs text-white/60">Equipment Mgmt</div></div>
+    <div><div class="text-sm font-semibold leading-tight">MSU-MCEST</div><div class="text-xs text-white/60">Inventory System</div></div>
   </div>
   <nav class="flex-1 py-4 text-sm">
     <p class="px-5 mt-3 text-[11px] uppercase tracking-wider text-white/40 mb-2">Overview</p>
@@ -104,16 +104,39 @@ $officialRows = array_values(array_filter($userRows, function ($user) {
             <?php else: foreach ($userRows as $user):
               $roleLabel = $user['role'] === 'admin' ? 'Administrator' : ($user['role'] === 'faculty' ? 'Staff' : 'Student');
               $fullName = trim($user['full_name']) ?: $user['username'];
+              $approvalStatus = $user['approval_status'] ?? 'approved';
+              if ($approvalStatus === 'pending') {
+                  $statusBadge = '<span class="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded">Pending approval</span>';
+              } elseif ($approvalStatus === 'rejected') {
+                  $statusBadge = '<span class="px-2 py-1 bg-red-100 text-red-800 text-xs rounded">Rejected</span>';
+              } elseif ((int) $user['is_active'] === 1) {
+                  $statusBadge = '<span class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded">Active</span>';
+              } else {
+                  $statusBadge = '<span class="px-2 py-1 bg-red-100 text-red-800 text-xs rounded">Inactive</span>';
+              }
             ?>
               <tr data-searchable data-role="<?php echo h($user['role']); ?>">
                 <td><?php echo h($user['username']); ?></td>
                 <td><?php echo h($fullName); ?></td>
                 <td><?php echo h($roleLabel); ?></td>
-                <td><?php echo $user['is_active'] ? '<span class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded">Active</span>' : '<span class="px-2 py-1 bg-red-100 text-red-800 text-xs rounded">Inactive</span>'; ?></td>
+                <td><?php echo $statusBadge; ?></td>
                 <td><?php echo h(substr($user['created_at'], 0, 10)); ?></td>
                 <td>
                   <?php if ((int) $user['user_id'] !== (int) ($_SESSION['user_id'] ?? 0)): ?>
-                    <?php if ((int) $user['is_active'] === 1): ?>
+                    <?php if ($approvalStatus === 'pending'): ?>
+                      <div class="flex justify-center gap-3">
+                        <form method="POST" action="../process/users.php" onsubmit="return confirm('Approve this account?');">
+                          <input type="hidden" name="action" value="approve" />
+                          <input type="hidden" name="user_id" value="<?php echo h($user['user_id']); ?>" />
+                          <button class="text-green-700 hover:text-green-900 text-xs font-medium">Approve</button>
+                        </form>
+                        <form method="POST" action="../process/users.php" onsubmit="return confirm('Reject this account request?');">
+                          <input type="hidden" name="action" value="reject" />
+                          <input type="hidden" name="user_id" value="<?php echo h($user['user_id']); ?>" />
+                          <button class="text-red-600 hover:text-red-800 text-xs font-medium">Reject</button>
+                        </form>
+                      </div>
+                    <?php elseif ((int) $user['is_active'] === 1): ?>
                       <form method="POST" action="../process/users.php" class="flex justify-center" onsubmit="return confirm('Deactivate this user?');">
                         <input type="hidden" name="action" value="deactivate" />
                         <input type="hidden" name="user_id" value="<?php echo h($user['user_id']); ?>" />
@@ -123,7 +146,7 @@ $officialRows = array_values(array_filter($userRows, function ($user) {
                       <form method="POST" action="../process/users.php" class="flex justify-center" onsubmit="return confirm('Reactivate this user?');">
                         <input type="hidden" name="action" value="reactivate" />
                         <input type="hidden" name="user_id" value="<?php echo h($user['user_id']); ?>" />
-                        <button class="text-green-700 hover:text-green-900 text-xs font-medium">Reactivate</button>
+                        <button class="text-green-700 hover:text-green-900 text-xs font-medium"><?php echo $approvalStatus === 'rejected' ? 'Approve' : 'Reactivate'; ?></button>
                       </form>
                     <?php endif; ?>
                   <?php endif; ?>

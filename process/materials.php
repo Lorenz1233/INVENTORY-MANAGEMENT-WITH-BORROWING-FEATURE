@@ -9,6 +9,8 @@ $action = strtolower(post_value('action', 'save'));
 $materialName = compact_spaces(post_value('material_name'));
 $description = post_value('description');
 $unitPrice = post_value('unit_price');
+$ownerOfficialId = post_value('owner_official_id');
+$actorUserId = (int) ($_SESSION['user_id'] ?? 0);
 
 try {
     if ($action === 'delete' && $itemId > 0) {
@@ -47,6 +49,7 @@ try {
 
     $categoryId = require_existing_category_id($pdo, post_value('category_id'), post_value('category'));
     $unitId = require_existing_unit_id($pdo, post_value('unit_id'), post_value('unit') ?: 'pcs');
+    $ownerOfficialId = require_existing_owner_official_id($pdo, $ownerOfficialId);
     assert_item_not_duplicate($pdo, $materialName, $categoryId, $itemId);
 
     $notes = trim($description . "\nType: Material" . ($unitPrice !== '' ? "\nUnit price: PHP " . $unitPrice : ''));
@@ -78,23 +81,24 @@ try {
             $pdo,
             'UPDATE items
              SET item_name = ?, description = ?, unit_id = ?, category_id = ?,
-                 total_quantity = ?, available_quantity = ?, date_added = ?, status = "active", stock_status = ?
+                 total_quantity = ?, available_quantity = ?, received_by_official_id = ?,
+                 date_added = ?, status = "active", stock_status = ?, updated_by_user_id = ?
              WHERE item_id = ?',
-            [$materialName, $notes, $unitId, $categoryId, $quantity, $availableQuantity, $dateAdded, $stockStatus, $itemId]
+            [$materialName, $notes, $unitId, $categoryId, $quantity, $availableQuantity, $ownerOfficialId, $dateAdded, $stockStatus, $actorUserId, $itemId]
         );
-        log_audit($pdo, 'item_update', 'items', $itemId, ['item_name' => $materialName, 'type' => 'material']);
+        log_audit($pdo, 'item_update', 'items', $itemId, ['item_name' => $materialName, 'type' => 'material', 'owner_official_id' => $ownerOfficialId]);
     } else {
         $stockStatus = inventory_stock_status($quantity);
 
         db_exec(
             $pdo,
             'INSERT INTO items
-                (item_name, description, unit_id, category_id, total_quantity, available_quantity, date_added, status, stock_status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, "active", ?)',
-            [$materialName, $notes, $unitId, $categoryId, $quantity, $quantity, $dateAdded, $stockStatus]
+                (item_name, description, unit_id, category_id, total_quantity, available_quantity, received_by_official_id, created_by_user_id, updated_by_user_id, date_added, status, stock_status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "active", ?)',
+            [$materialName, $notes, $unitId, $categoryId, $quantity, $quantity, $ownerOfficialId, $actorUserId, $actorUserId, $dateAdded, $stockStatus]
         );
         $itemId = (int) $pdo->lastInsertId();
-        log_audit($pdo, 'item_create', 'items', $itemId, ['item_name' => $materialName, 'type' => 'material']);
+        log_audit($pdo, 'item_create', 'items', $itemId, ['item_name' => $materialName, 'type' => 'material', 'owner_official_id' => $ownerOfficialId]);
     }
 
     $pdo->commit();

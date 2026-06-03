@@ -20,10 +20,20 @@ if ($sort === 'recent') {
 }
 
 $materialRows = all_rows(
-    'SELECT i.*, c.category_name, u.unit_name
+    'SELECT i.*, c.category_name, u.unit_name,
+            CONCAT(o.first_name, " ", o.last_name) AS owner_name,
+            COALESCE(
+                NULLIF(TRIM(CONCAT(COALESCE(cm.first_name, ""), " ", COALESCE(cm.last_name, ""))), ""),
+                NULLIF(TRIM(CONCAT(COALESCE(co.first_name, ""), " ", COALESCE(co.last_name, ""))), ""),
+                creator.username
+            ) AS added_by_name
      FROM items i
      LEFT JOIN category c ON c.category_id = i.category_id
      LEFT JOIN unit u ON u.unit_id = i.unit_id
+     LEFT JOIN officials_masterlist o ON o.official_id = i.received_by_official_id
+     LEFT JOIN users creator ON creator.user_id = i.created_by_user_id
+     LEFT JOIN master_list cm ON cm.student_id = creator.student_id
+     LEFT JOIN officials_masterlist co ON co.official_id = creator.official_id
      WHERE ' . implode(' AND ', $where) . '
      ORDER BY ' . $orderBy,
     $params
@@ -44,6 +54,11 @@ $materialCategories = all_rows(
 );
 $categoryRows = all_rows('SELECT * FROM category ORDER BY category_name');
 $unitRows = all_rows('SELECT * FROM unit ORDER BY unit_name');
+$facultyOwnerRows = all_rows(
+    'SELECT o.official_id, CONCAT(o.first_name, " ", o.last_name) AS full_name
+     FROM officials_masterlist o
+     ORDER BY o.last_name, o.first_name'
+);
 $totalMaterials = count($materialRows);
 $totalQuantity = array_sum(array_map(function ($row) {
     return (int) $row['total_quantity'];
@@ -100,7 +115,7 @@ if (($_GET['export'] ?? '') === 'csv') {
     <img class="brand-logo" src="../assets/images/logo.png" width="44" height="44" alt="MSU-MCEST logo" />
     <div>
       <div class="text-sm font-semibold leading-tight">MSU-MCEST</div>
-      <div class="text-xs text-white/60">Equipment Mgmt</div>
+      <div class="text-xs text-white/60">Inventory System</div>
     </div>
   </div>
   <nav class="flex-1 py-4 text-sm">
@@ -197,11 +212,11 @@ if (($_GET['export'] ?? '') === 'csv') {
           <table class="table">
             <thead><tr>
               <th>Material</th><th>Category</th><th>Unit</th><th>Quantity</th><th>Unit Price</th>
-              <th>Total Value</th><th>Date Added</th><th>Added By</th><th class="text-right">Actions</th>
+              <th>Total Value</th><th>Owner</th><th>Date Added</th><th>Added By</th><th class="text-right">Actions</th>
             </tr></thead>
             <tbody>
               <?php if (!$materialRows): ?>
-                <tr><td colspan="9"><div class="empty"><div class="icon">-</div><p class="font-medium text-gray-700">No materials yet</p><p class="text-sm">Materials added by staff will appear here.</p></div></td></tr>
+                <tr><td colspan="10"><div class="empty"><div class="icon">-</div><p class="font-medium text-gray-700">No materials yet</p><p class="text-sm">Materials added by staff will appear here.</p></div></td></tr>
               <?php else: foreach ($materialRows as $item):
                 $unitPrice = unit_price_from_description($item['description']);
                 $lineValue = $unitPrice * (int) $item['total_quantity'];
@@ -214,8 +229,9 @@ if (($_GET['export'] ?? '') === 'csv') {
                   <td><?php echo h($item['total_quantity']); ?></td>
                   <td><?php echo money($unitPrice); ?></td>
                   <td><?php echo money($lineValue); ?></td>
+                  <td><?php echo h($item['owner_name'] ?: 'Unassigned'); ?></td>
                   <td><?php echo h($item['date_added']); ?></td>
-                  <td><?php echo h($currentName); ?></td>
+                  <td><?php echo h($item['added_by_name'] ?: 'Unknown'); ?></td>
                   <td class="text-right space-x-2">
                     <button type="button" class="text-blue-600 hover:text-blue-800 text-xs font-medium"
                       data-modal-open="addMaterialModal"
@@ -225,6 +241,7 @@ if (($_GET['export'] ?? '') === 'csv') {
                       data-category-id="<?php echo h($item['category_id']); ?>"
                       data-description="<?php echo h($description); ?>"
                       data-unit-id="<?php echo h($item['unit_id']); ?>"
+                      data-owner-official-id="<?php echo h($item['received_by_official_id']); ?>"
                       data-quantity="<?php echo h($item['total_quantity']); ?>"
                       data-unit-price="<?php echo h($unitPrice); ?>"
                       data-date-added="<?php echo h($item['date_added']); ?>">Edit</button>
@@ -260,6 +277,15 @@ if (($_GET['export'] ?? '') === 'csv') {
             </select>
           </div>
           <div class="md:col-span-2"><label class="label">Description</label><textarea class="textarea" name="description" rows="2"></textarea></div>
+          <div class="md:col-span-2"><label class="label">Owner (Official)</label>
+            <input class="input mb-2" type="search" placeholder="Search owner by name or ID..." data-owner-search />
+            <select class="select" name="owner_official_id" required>
+              <option value="">Select official owner</option>
+              <?php foreach ($facultyOwnerRows as $owner): ?>
+                <option value="<?php echo h($owner['official_id']); ?>"><?php echo h($owner['full_name']); ?> (<?php echo h($owner['official_id']); ?>)</option>
+              <?php endforeach; ?>
+            </select>
+          </div>
           <div><label class="label">Unit</label>
             <select class="select" name="unit_id" required>
               <option value="">Select unit</option>
@@ -282,15 +308,47 @@ if (($_GET['export'] ?? '') === 'csv') {
   </div>
   <script src="../js/shared.js"></script>
   <script>
+    function setupOwnerSearch(form) {
+      var search = form.querySelector('[data-owner-search]');
+      var select = form.elements.owner_official_id;
+      if (!search || !select) {
+        return;
+      }
+
+      var options = Array.prototype.slice.call(select.options).map(function (option) {
+        return {
+          option: option,
+          text: (option.textContent + ' ' + option.value).toLowerCase(),
+          isPlaceholder: option.value === ''
+        };
+      });
+
+      search.addEventListener('input', function () {
+        var term = search.value.trim().toLowerCase();
+        options.forEach(function (entry) {
+          entry.option.hidden = !entry.isPlaceholder && term !== '' && entry.text.indexOf(term) === -1;
+        });
+
+        if (select.value && select.selectedOptions[0] && select.selectedOptions[0].hidden) {
+          select.value = '';
+        }
+      });
+    }
+
+    setupOwnerSearch(document.querySelector('#addMaterialModal form'));
+
     document.querySelectorAll('[data-edit-material]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var form = document.querySelector('#addMaterialModal form');
         document.querySelector('#addMaterialModal h3').textContent = 'Edit Material';
+        form.querySelector('[data-owner-search]').value = '';
+        form.querySelector('[data-owner-search]').dispatchEvent(new Event('input'));
         form.elements.id.value = btn.dataset.id || '';
         form.elements.material_name.value = btn.dataset.name || '';
         form.elements.category_id.value = btn.dataset.categoryId || '';
         form.elements.description.value = btn.dataset.description || '';
         form.elements.unit_id.value = btn.dataset.unitId || '';
+        form.elements.owner_official_id.value = btn.dataset.ownerOfficialId || '';
         form.elements.quantity.value = btn.dataset.quantity || 0;
         form.elements.unit_price.value = btn.dataset.unitPrice || 0;
         form.elements.date_added.value = btn.dataset.dateAdded || '';
@@ -301,6 +359,7 @@ if (($_GET['export'] ?? '') === 'csv') {
         var form = document.querySelector('#addMaterialModal form');
         document.querySelector('#addMaterialModal h3').textContent = 'Add Material';
         form.reset();
+        form.querySelector('[data-owner-search]').dispatchEvent(new Event('input'));
         form.elements.id.value = '';
       });
     });

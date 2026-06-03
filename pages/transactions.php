@@ -2,12 +2,26 @@
 require_once __DIR__ . '/../partials/page-data.php';
 require_borrow_workflow_manager();
 
+[$ownerWhere, $ownerParams] = transaction_owner_filter_sql('i', 'br');
 $transactionRows = all_rows(
-    'SELECT t.*, i.item_name, CONCAT(m.first_name, " ", m.last_name) AS borrower_name
+    'SELECT t.*,
+            i.item_name,
+            COALESCE(
+                NULLIF(TRIM(CONCAT(COALESCE(m.first_name, ""), " ", COALESCE(m.last_name, ""))), ""),
+                NULLIF(TRIM(CONCAT(COALESCE(bo.first_name, ""), " ", COALESCE(bo.last_name, ""))), ""),
+                borrower.username
+            ) AS borrower_name,
+            CONCAT(o.first_name, " ", o.last_name) AS owner_name
      FROM transactions t
+     JOIN borrow_request br ON br.request_id = t.request_id
      JOIN items i ON i.item_id = t.item_id
-     JOIN master_list m ON m.student_id = t.student_id
-     ORDER BY t.created_at DESC'
+     LEFT JOIN users borrower ON borrower.user_id = COALESCE(t.borrower_user_id, br.borrower_user_id)
+     LEFT JOIN master_list m ON m.student_id = COALESCE(borrower.student_id, t.student_id)
+     LEFT JOIN officials_masterlist bo ON bo.official_id = borrower.official_id
+     LEFT JOIN officials_masterlist o ON o.official_id = COALESCE(br.owner_official_id, i.received_by_official_id)
+     WHERE ' . $ownerWhere . '
+     ORDER BY t.created_at DESC',
+    $ownerParams
 );
 ?>
 <!doctype html>
@@ -15,7 +29,7 @@ $transactionRows = all_rows(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Transactions • MSU-MCEST CEMS</title>
+  <title>Transactions • MSU-MCEST</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="../css/app.css" />
   <script>
@@ -32,7 +46,7 @@ $transactionRows = all_rows(
     <img class="brand-logo" src="../assets/images/logo.png" width="44" height="44" alt="MSU-MCEST logo" />
     <div>
       <div class="text-sm font-semibold leading-tight">MSU-MCEST</div>
-      <div class="text-xs text-white/60">Equipment Mgmt</div>
+      <div class="text-xs text-white/60">Inventory System</div>
     </div>
   </div>
   <nav class="flex-1 py-4 text-sm">
@@ -87,11 +101,11 @@ $transactionRows = all_rows(
           <table class="table">
             <thead><tr>
               <th>Txn #</th><th>Borrower</th><th>Item</th><th>Qty</th>
-              <th>Date Borrowed</th><th>Due Date</th><th>Return Date</th><th>Status</th><th class="text-right">Actions</th>
+              <th>Owner</th><th>Date Borrowed</th><th>Due Date</th><th>Return Date</th><th>Status</th><th class="text-right">Actions</th>
             </tr></thead>
             <tbody>
               <?php if (!$transactionRows): ?>
-                <tr><td colspan="9"><div class="empty"><div class="icon">-</div><p class="font-medium text-gray-700">No transactions yet</p><p class="text-sm">Approved borrow requests become transactions here.</p></div></td></tr>
+                <tr><td colspan="10"><div class="empty"><div class="icon">-</div><p class="font-medium text-gray-700">No transactions yet</p><p class="text-sm">Approved borrow requests become transactions here.</p></div></td></tr>
               <?php else: foreach ($transactionRows as $transaction):
                 $isReturned = $transaction['status'] === 'RETURNED';
                 $isOverdue = !$isReturned && $transaction['expected_return_date'] < date('Y-m-d');
@@ -103,6 +117,7 @@ $transactionRows = all_rows(
                   <td><?php echo h($transaction['borrower_name']); ?></td>
                   <td><?php echo h($transaction['item_name']); ?></td>
                   <td><?php echo h($transaction['quantity_borrowed']); ?></td>
+                  <td><?php echo h($transaction['owner_name'] ?: 'Unassigned'); ?></td>
                   <td><?php echo h($transaction['borrow_date']); ?></td>
                   <td><?php echo h($transaction['expected_return_date']); ?></td>
                   <td><?php echo $isReturned ? h(substr($transaction['updated_at'], 0, 10)) : '-'; ?></td>

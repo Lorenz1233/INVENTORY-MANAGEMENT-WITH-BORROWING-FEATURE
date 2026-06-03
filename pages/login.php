@@ -1,15 +1,23 @@
 <?php
 $loginError = $_GET['error'] ?? '';
-$loginMessage = $loginError === 'missing'
-    ? 'Please enter your username and password.'
-    : ($loginError === 'login_required' ? 'Please sign in first.' : 'Invalid username or password.');
+$registered = $_GET['registered'] ?? '';
+$reset = $_GET['reset'] ?? '';
+$loginMessages = [
+    'missing' => 'Please enter your username and password.',
+    'login_required' => 'Please sign in first.',
+    'pending' => 'Your account request is waiting for administrator approval.',
+    'rejected' => 'Your account request was not approved. Please contact the administrator.',
+    'inactive' => 'This account is inactive. Please contact the administrator.',
+    'invalid' => 'Invalid username or password.',
+];
+$loginMessage = $loginMessages[$loginError] ?? 'Invalid username or password.';
 ?>
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Login • MSU-MCEST CEMS</title>
+  <title>Login • MSU-MCEST</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="../css/app.css" />
   <script>
@@ -59,6 +67,15 @@ $loginMessage = $loginError === 'missing'
             <div id="loginError" class="<?php echo $loginError ? '' : 'hidden '; ?>mt-4 text-sm bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2">
               <?php echo htmlspecialchars($loginMessage, ENT_QUOTES, 'UTF-8'); ?>
             </div>
+            <div class="<?php echo $registered === 'pending' ? '' : 'hidden '; ?>mt-4 text-sm bg-green-50 text-green-700 border border-green-200 rounded-md px-3 py-2">
+              Your account request was submitted. Please wait for an administrator to approve it.
+            </div>
+            <div class="<?php echo $registered === 'approved' ? '' : 'hidden '; ?>mt-4 text-sm bg-green-50 text-green-700 border border-green-200 rounded-md px-3 py-2">
+              Your account was created and is ready to use.
+            </div>
+            <div class="<?php echo $reset === 'success' ? '' : 'hidden '; ?>mt-4 text-sm bg-green-50 text-green-700 border border-green-200 rounded-md px-3 py-2">
+              Your password was reset. Sign in with your new password.
+            </div>
 
             <form id="loginForm" method="POST" action="../process/login.php" class="mt-5 space-y-4">
               <div>
@@ -69,8 +86,16 @@ $loginMessage = $loginError === 'missing'
                 <label class="label" for="password">Password</label>
                 <input class="input" type="password" id="password" name="password" required />
               </div>
+              <div class="text-right">
+                <a href="forgot-password.php" class="text-sm text-navy font-semibold hover:text-gold-dark">Forgot password?</a>
+              </div>
               <button type="submit" class="btn btn-primary w-full">Sign in</button>
             </form>
+
+            <p class="mt-5 text-sm text-gray-500 text-center">
+              Need an account?
+              <a href="register.php" class="text-navy font-semibold hover:text-gold-dark">Create account</a>
+            </p>
 
           </div>
         </div>

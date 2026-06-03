@@ -1,4 +1,18 @@
-<?php require_once __DIR__ . '/../partials/page-data.php'; require_admin(); ?>
+<?php
+require_once __DIR__ . '/../partials/page-data.php';
+require_admin();
+
+$passwordErrorCode = $_GET['error'] ?? '';
+$passwordSuccessCode = $_GET['success'] ?? '';
+$passwordErrorMessages = [
+    'password_match' => 'New passwords do not match.',
+    'weak_password' => 'Password must be at least 6 characters.',
+    'current_password' => 'Current password is incorrect.',
+    'password_update_failed' => 'Password could not be updated. Please try again.',
+];
+$passwordError = $passwordErrorMessages[$passwordErrorCode] ?? '';
+$passwordSuccess = $passwordSuccessCode === 'password_updated' ? 'Password updated successfully.' : '';
+?>
 <!doctype html>
 <html lang="en">
 <head>
@@ -21,7 +35,7 @@
     <img class="brand-logo" src="../assets/images/logo.png" width="44" height="44" alt="MSU-MCEST logo" />
     <div>
       <div class="text-sm font-semibold leading-tight">MSU-MCEST</div>
-      <div class="text-xs text-white/60">Equipment Mgmt</div>
+      <div class="text-xs text-white/60">Inventory System</div>
     </div>
   </div>
   <nav class="flex-1 py-4 text-sm">
@@ -69,6 +83,12 @@
     <main class="p-6">
       <section class="card max-w-xl">
         <div class="card-body">
+          <?php if ($passwordError): ?>
+            <div class="mb-4 text-sm bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2"><?php echo h($passwordError); ?></div>
+          <?php endif; ?>
+          <?php if ($passwordSuccess): ?>
+            <div class="mb-4 text-sm bg-green-50 text-green-700 border border-green-200 rounded-md px-3 py-2"><?php echo h($passwordSuccess); ?></div>
+          <?php endif; ?>
           <form method="POST" action="../process/change_password.php" class="space-y-4">
             <!-- PHP: include CSRF token -->
             <div><label class="label">Current password</label><input class="input" type="password" name="current_password" required /></div>

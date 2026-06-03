@@ -2,26 +2,33 @@
 require_once __DIR__ . '/../partials/page-data.php';
 require_borrower();
 
-$studentId = (int) ($currentUser['student_id'] ?? $_SESSION['student_id'] ?? 0);
+[$borrowerWhere, $borrowerParams] = current_borrower_filter_sql('br');
 $myRequestRows = all_rows(
     'SELECT br.*,
+            COALESCE(NULLIF(br.purpose, ""), NULLIF(br.remarks, "")) AS request_purpose,
             DATE_ADD(br.request_date, INTERVAL br.days_to_borrow DAY) AS due_date,
             i.item_name,
+            CONCAT(o.first_name, " ", o.last_name) AS owner_name,
             t.status AS transaction_status
      FROM borrow_request br
      JOIN items i ON i.item_id = br.item_id
+     LEFT JOIN officials_masterlist o ON o.official_id = COALESCE(br.owner_official_id, i.received_by_official_id)
      LEFT JOIN transactions t ON t.request_id = br.request_id
-     WHERE br.student_id = ?
+     WHERE ' . $borrowerWhere . '
      ORDER BY br.created_at DESC',
-    [$studentId]
+    $borrowerParams
 );
+$portalLabel = ($currentUser['role'] ?? '') === 'faculty' ? 'Faculty Portal' : 'Student Portal';
+$profileLine = ($currentUser['role'] ?? '') === 'faculty'
+    ? ($currentUser['position_code'] ?? 'Faculty')
+    : trim(($currentUser['course_code'] ?? 'Student') . (($currentUser['year_level'] ?? '') ? ' - ' . $currentUser['year_level'] : ''));
 ?>
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>My Requests • MSU-MCEST CEMS</title>
+  <title>My Requests • MSU-MCEST</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="../css/app.css" />
   <script>
@@ -38,7 +45,7 @@ $myRequestRows = all_rows(
     <img class="brand-logo" src="../assets/images/logo.png" width="44" height="44" alt="MSU-MCEST logo" />
     <div>
       <div class="text-sm font-semibold leading-tight">MSU-MCEST</div>
-      <div class="text-xs text-white/60">Student Portal</div>
+      <div class="text-xs text-white/60"><?php echo h($portalLabel); ?></div>
     </div>
   </div>
   <nav class="flex-1 py-4 text-sm">
@@ -53,7 +60,7 @@ $myRequestRows = all_rows(
     <div class="w-9 h-9 rounded-full bg-white/10 grid place-items-center text-sm font-semibold"><?php echo h($currentInitials); ?></div>
     <div class="text-sm leading-tight">
       <div class="font-medium"><?php echo h($currentName); ?></div>
-      <div class="text-white/50 text-xs"><?php echo h(trim(($currentUser['course_code'] ?? 'Student') . (($currentUser['year_level'] ?? '') ? ' - ' . $currentUser['year_level'] : ''))); ?></div>
+      <div class="text-white/50 text-xs"><?php echo h($profileLine); ?></div>
     </div>
     <a href="../process/logout.php" class="ml-auto text-white/60 hover:text-gold text-xs" data-confirm="Log out now?">Logout</a>
   </div>
@@ -83,11 +90,11 @@ $myRequestRows = all_rows(
           <table class="table">
             <thead><tr>
               <th>Request #</th><th>Item</th><th>Qty</th><th>Requested</th>
-              <th>Borrow Date</th><th>Due Date</th><th>Purpose</th><th>Status</th><th class="text-right">Actions</th>
+              <th>Owner</th><th>Borrow Date</th><th>Due Date</th><th>Purpose</th><th>Status</th><th class="text-right">Actions</th>
             </tr></thead>
             <tbody>
               <?php if (!$myRequestRows): ?>
-                <tr><td colspan="9"><div class="empty"><div class="icon">-</div><p class="font-medium text-gray-700">No requests yet</p><p class="text-sm">Browse equipment and submit a request to get started.</p></div></td></tr>
+                <tr><td colspan="10"><div class="empty"><div class="icon">-</div><p class="font-medium text-gray-700">No requests yet</p><p class="text-sm">Browse equipment and submit a request to get started.</p></div></td></tr>
               <?php else: foreach ($myRequestRows as $request):
                 $displayStatus = $request['transaction_status'] === 'RETURNED' ? 'RETURNED' : $request['status'];
                 $statusKey = strtolower($displayStatus);
@@ -97,9 +104,10 @@ $myRequestRows = all_rows(
                   <td><?php echo h($request['item_name']); ?></td>
                   <td><?php echo h($request['quantity_requested']); ?></td>
                   <td><?php echo h(substr($request['created_at'], 0, 10)); ?></td>
+                  <td><?php echo h($request['owner_name'] ?: 'Unassigned'); ?></td>
                   <td><?php echo h($request['request_date']); ?></td>
                   <td><?php echo h($request['due_date']); ?></td>
-                  <td><?php echo h($request['remarks'] ?: '-'); ?></td>
+                  <td><?php echo h($request['request_purpose'] ?: '-'); ?></td>
                   <td><?php echo badge($displayStatus); ?></td>
                   <td class="text-right"><span class="text-xs text-gray-400">-</span></td>
                 </tr>

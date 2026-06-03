@@ -15,6 +15,10 @@ if ($newPassword === '' || $newPassword !== $confirmPassword) {
     redirect_back($fallback, ['error' => 'password_match']);
 }
 
+if (strlen($newPassword) < 6) {
+    redirect_back($fallback, ['error' => 'weak_password']);
+}
+
 $stmt = db_exec($pdo, 'SELECT password FROM users WHERE user_id = ? LIMIT 1', [$_SESSION['user_id']]);
 $user = $stmt->fetch();
 

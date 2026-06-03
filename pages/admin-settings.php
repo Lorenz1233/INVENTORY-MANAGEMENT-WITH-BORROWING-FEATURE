@@ -47,22 +47,6 @@ function settings_audit_detail_text($details)
 $categoryRows = all_rows('SELECT * FROM category ORDER BY category_name');
 $unitRows = all_rows('SELECT * FROM unit ORDER BY unit_name');
 $positionRows = all_rows('SELECT * FROM positions ORDER BY position_name, position_code');
-$settingsUsers = all_rows(
-    'SELECT u.*,
-            COALESCE(NULLIF(TRIM(CONCAT(COALESCE(m.first_name, ""), " ", COALESCE(m.last_name, ""))), ""),
-                     NULLIF(TRIM(CONCAT(COALESCE(o.first_name, ""), " ", COALESCE(o.last_name, ""))), ""),
-                     u.username) AS full_name
-     FROM users u
-     LEFT JOIN master_list m ON m.student_id = u.student_id
-     LEFT JOIN officials_masterlist o ON o.official_id = u.official_id
-     ORDER BY u.username'
-);
-$settingsOfficials = array_values(array_filter($settingsUsers, function ($user) {
-    return in_array($user['role'], ['admin', 'faculty'], true);
-}));
-$settingsRoleCandidates = array_values(array_filter($settingsUsers, function ($user) {
-    return (int) $user['is_active'] === 1;
-}));
 $systemNotesRow = all_rows(
     'SELECT s.*,
             COALESCE(NULLIF(TRIM(CONCAT(COALESCE(m.first_name, ""), " ", COALESCE(m.last_name, ""))), ""),
@@ -121,24 +105,24 @@ $csvImportFormats = [
     'equipment' => [
         'label' => 'Equipment',
         'summary' => 'Use one row per item or equipment record.',
-        'required' => 'item_name, equipment_name, or name, plus quantity or qty.',
-        'headers' => ['item_name', 'item_code', 'category', 'unit', 'quantity', 'condition', 'description', 'date_added'],
-        'example' => ['Digital Multimeter', 'EQ-1001', 'Electronics', 'pcs', '12', 'Good', 'Handheld meter for lab use', '2026-05-27'],
+        'required' => 'item_name, equipment_name, or name, quantity or qty, and owner_official_id.',
+        'headers' => ['item_name', 'item_code', 'category', 'unit', 'quantity', 'condition', 'description', 'date_added', 'owner_official_id'],
+        'example' => ['Digital Multimeter', 'EQ-1001', 'Electronics', 'pcs', '12', 'Good', 'Handheld meter for lab use', '2026-05-27', 'OFF001'],
         'download' => '../assets/samples/equipment-import-example.csv',
         'extra_downloads' => [
             ['label' => 'Download items example', 'href' => '../assets/samples/items-import-example.csv'],
             ['label' => 'Download equipments example', 'href' => '../assets/samples/equipments-import-example.csv'],
         ],
-        'notes' => ['quantity must be a whole number.', 'date_added must use YYYY-MM-DD when provided.'],
+        'notes' => ['owner_official_id must match an official in the masterlist.', 'quantity must be a whole number.', 'date_added must use YYYY-MM-DD when provided.'],
     ],
     'materials' => [
         'label' => 'Materials',
         'summary' => 'Use one row per campus material or supply.',
-        'required' => 'material_name or item_name, plus quantity.',
-        'headers' => ['material_name', 'category', 'unit', 'quantity', 'unit_price', 'description', 'date_added'],
-        'example' => ['Bond Paper A4', 'Office Supplies', 'ream', '20', '245.00', 'White copy paper', '2026-05-27'],
+        'required' => 'material_name or item_name, quantity, and owner_official_id.',
+        'headers' => ['material_name', 'category', 'unit', 'quantity', 'unit_price', 'description', 'date_added', 'owner_official_id'],
+        'example' => ['Bond Paper A4', 'Office Supplies', 'ream', '20', '245.00', 'White copy paper', '2026-05-27', 'OFF003'],
         'download' => '../assets/samples/materials-import-example.csv',
-        'notes' => ['unit_price accepts up to two decimal places.', 'date_added must use YYYY-MM-DD when provided.'],
+        'notes' => ['owner_official_id must match an official in the masterlist.', 'unit_price accepts up to two decimal places.', 'date_added must use YYYY-MM-DD when provided.'],
     ],
 ];
 
@@ -156,7 +140,6 @@ $settingsErrorMessages = [
     'not_allowed' => 'You are not allowed to perform that settings action.',
     'upload_failed' => 'CSV upload failed. Please choose the file again.',
     'file_type' => 'Only CSV files are accepted.',
-    'missing' => 'User and role are required.',
     'notes_too_long' => 'System notes must be 5000 characters or fewer.',
     'invalid_action' => 'The submitted settings action was not recognized.',
     'settings_failed' => 'The settings request could not be completed.',
@@ -166,10 +149,8 @@ if ($settingsErrorCode !== '') {
     $settingsError = $settingsErrorMessages[$settingsErrorCode] ?? 'The settings request could not be completed.';
 }
 $csvErrorCodes = ['csv_import_failed', 'dataset', 'upload_failed', 'file_type'];
-$roleErrorCodes = ['missing', 'not_allowed', 'invalid_action', 'settings_failed'];
 $notesErrorCodes = ['notes_too_long', 'not_allowed', 'settings_failed'];
 $csvSettingsError = $settingsError !== '' && ($settingsErrorSection === 'csv' || ($settingsErrorSection === '' && in_array($settingsErrorCode, $csvErrorCodes, true)));
-$roleSettingsError = $settingsError !== '' && ($settingsErrorSection === 'roles' || ($settingsErrorSection === '' && in_array($settingsErrorCode, $roleErrorCodes, true)));
 $noteSettingsError = $settingsError !== '' && ($settingsErrorSection === 'notes' || ($settingsErrorSection === '' && in_array($settingsErrorCode, $notesErrorCodes, true)));
 $importSummary = isset($_GET['success']) && $_GET['success'] === 'imported'
     ? sprintf(
@@ -178,9 +159,6 @@ $importSummary = isset($_GET['success']) && $_GET['success'] === 'imported'
         (int) ($_GET['count'] ?? 0),
         (int) ($_GET['failed'] ?? 0)
     )
-    : '';
-$roleUpdateSummary = isset($_GET['success']) && $_GET['success'] === 'role_updated'
-    ? 'Role authorization updated successfully.'
     : '';
 $notesUpdateSummary = isset($_GET['success']) && $_GET['success'] === 'notes_saved'
     ? 'System notes saved successfully.'
@@ -191,7 +169,7 @@ $notesUpdateSummary = isset($_GET['success']) && $_GET['success'] === 'notes_sav
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Settings • MSU-MCEST CEMS</title>
+  <title>Settings • MSU-MCEST</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="../css/app.css" />
   <script>
@@ -208,7 +186,7 @@ $notesUpdateSummary = isset($_GET['success']) && $_GET['success'] === 'notes_sav
     <img class="brand-logo" src="../assets/images/logo.png" width="44" height="44" alt="MSU-MCEST logo" />
     <div>
       <div class="text-sm font-semibold leading-tight">MSU-MCEST</div>
-      <div class="text-xs text-white/60">Equipment Mgmt</div>
+      <div class="text-xs text-white/60">Inventory System</div>
     </div>
   </div>
   <nav class="flex-1 py-4 text-sm">
@@ -424,53 +402,6 @@ $notesUpdateSummary = isset($_GET['success']) && $_GET['success'] === 'notes_sav
         </div>
       </section>
 
-      <?php if ($canManageUserRoles): ?>
-      <section class="card lg:col-span-2">
-        <div class="card-header"><h2 class="font-semibold text-navy">Official Role Authorization</h2></div>
-        <div class="card-body space-y-4">
-          <p class="text-sm text-gray-600">Manage authorization and revocation of official (staff/admin) roles. Use this section to grant or revoke elevated permissions to system users.</p>
-          <?php if ($roleSettingsError): ?>
-            <p class="text-sm rounded-md border border-red-200 bg-red-50 text-red-700 px-3 py-2"><?php echo h($settingsError); ?></p>
-          <?php endif; ?>
-          <?php if ($roleUpdateSummary): ?>
-            <p class="text-sm rounded-md border border-green-200 bg-green-50 text-green-700 px-3 py-2"><?php echo h($roleUpdateSummary); ?></p>
-          <?php endif; ?>
-          <div class="overflow-x-auto">
-            <table class="table text-sm">
-              <thead><tr><th>Username</th><th>Full Name</th><th>Current Role</th><th>Status</th><th class="text-right">Actions</th></tr></thead>
-              <tbody>
-                <?php if (!$settingsOfficials): ?>
-                  <tr><td colspan="5"><div class="empty text-sm"><p class="font-medium text-gray-700">No official users found</p></div></td></tr>
-                <?php else: foreach ($settingsOfficials as $official):
-                  $fullName = trim($official['full_name']) ?: $official['username'];
-                  $roleLabel = $official['role'] === 'admin' ? 'Administrator' : 'Staff';
-                ?>
-                <tr>
-                  <td><?php echo h($official['username']); ?></td>
-                  <td><?php echo h($fullName); ?></td>
-                  <td><span class="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded"><?php echo h($roleLabel); ?></span></td>
-                  <td><?php echo $official['is_active'] ? '<span class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded">Active</span>' : '<span class="px-2 py-1 bg-red-100 text-red-800 text-xs rounded">Inactive</span>'; ?></td>
-                  <td class="text-right space-x-2">
-                    <form method="POST" action="../process/admin_settings.php" class="inline" onsubmit="return confirm('Revoke official authorization?');">
-                      <input type="hidden" name="settings_action" value="update_role" />
-                      <input type="hidden" name="user_id" value="<?php echo h($official['user_id']); ?>" />
-                      <input type="hidden" name="username" value="<?php echo h($official['username']); ?>" />
-                      <input type="hidden" name="new_role" value="Revoke" />
-                      <button class="text-red-600 hover:text-red-800 text-xs font-medium">Revoke</button>
-                    </form>
-                  </td>
-                </tr>
-                <?php endforeach; endif; ?>
-              </tbody>
-            </table>
-          </div>
-          <div class="pt-4 border-t flex gap-2">
-            <button type="button" class="btn btn-primary btn-sm" data-modal-open="authorizeRoleModal">+ Authorize New Official</button>
-          </div>
-        </div>
-      </section>
-      <?php endif; ?>
-
       <section class="card lg:col-span-2">
         <div class="card-header"><h2 class="font-semibold text-navy">Audit / Help</h2></div>
         <div class="card-body grid grid-cols-1 lg:grid-cols-[1fr_18rem] gap-4 text-sm text-gray-600">
@@ -500,48 +431,13 @@ $notesUpdateSummary = isset($_GET['success']) && $_GET['success'] === 'notes_sav
             <ul class="list-disc list-inside space-y-2 text-xs text-gray-600">
               <li>CSV imports use the selected dataset format and the downloadable examples above.</li>
               <li>System Notes are shared on this settings page and editable by administrators.</li>
-              <li>Audit rows show recent saved changes, imports, account actions, and role updates.</li>
+              <li>Audit rows show recent saved changes, imports, and account actions.</li>
               <li>Reference data cannot be deleted while records still depend on it.</li>
             </ul>
           </div>
         </div>
       </section>
     </main>
-
-    <?php if ($canManageUserRoles): ?>
-    <!-- Modal: Authorize New Official -->
-    <div class="modal" id="authorizeRoleModal">
-      <div class="modal-card">
-        <div class="card-header"><h3 class="font-semibold text-navy">Authorize Official Role</h3>
-          <button type="button" data-modal-close class="text-gray-400 hover:text-gray-700">✕</button></div>
-        <form method="POST" action="../process/admin_settings.php" class="card-body grid grid-cols-1 gap-4">
-          <input type="hidden" name="settings_action" value="update_role" />
-          <div><label class="label">Select System User</label>
-            <select class="select" name="user_id" required>
-              <option value="">Choose a system user...</option>
-              <?php foreach ($settingsRoleCandidates as $candidate):
-                $candidateRole = $candidate['role'] === 'admin' ? 'Administrator' : ($candidate['role'] === 'faculty' ? 'Staff' : 'Student');
-              ?>
-                <option value="<?php echo h($candidate['user_id']); ?>"><?php echo h(trim($candidate['full_name']) ?: $candidate['username']); ?> - <?php echo h($candidate['username']); ?> (<?php echo h($candidateRole); ?>)</option>
-              <?php endforeach; ?>
-            </select>
-          </div>
-          <div><label class="label">Authorize As Role</label>
-            <select class="select" name="new_role" required>
-              <option value="">Select role...</option>
-              <option value="Staff">Staff (Equipment Management)</option>
-              <option value="Administrator">Administrator (Full Access)</option>
-            </select>
-          </div>
-          <div class="flex justify-end gap-2">
-            <button type="button" class="btn btn-outline" data-modal-close>Cancel</button>
-            <button type="submit" class="btn btn-primary">Authorize</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <?php endif; ?>
 
   </div>
   <script src="../js/shared.js"></script>

@@ -29,10 +29,20 @@ if ($sort === 'recent') {
 }
 
 $equipmentRows = all_rows(
-    'SELECT i.*, c.category_name, u.unit_name
+    'SELECT i.*, c.category_name, u.unit_name,
+            CONCAT(o.first_name, " ", o.last_name) AS owner_name,
+            COALESCE(
+                NULLIF(TRIM(CONCAT(COALESCE(cm.first_name, ""), " ", COALESCE(cm.last_name, ""))), ""),
+                NULLIF(TRIM(CONCAT(COALESCE(co.first_name, ""), " ", COALESCE(co.last_name, ""))), ""),
+                creator.username
+            ) AS added_by_name
      FROM items i
      LEFT JOIN category c ON c.category_id = i.category_id
      LEFT JOIN unit u ON u.unit_id = i.unit_id
+     LEFT JOIN officials_masterlist o ON o.official_id = i.received_by_official_id
+     LEFT JOIN users creator ON creator.user_id = i.created_by_user_id
+     LEFT JOIN master_list cm ON cm.student_id = creator.student_id
+     LEFT JOIN officials_masterlist co ON co.official_id = creator.official_id
      WHERE ' . implode(' AND ', $where) . '
      ORDER BY ' . $orderBy,
     $params
@@ -46,6 +56,11 @@ $equipmentCategories = all_rows(
 );
 $categoryRows = all_rows('SELECT * FROM category ORDER BY category_name');
 $unitRows = all_rows('SELECT * FROM unit ORDER BY unit_name');
+$facultyOwnerRows = all_rows(
+    'SELECT o.official_id, CONCAT(o.first_name, " ", o.last_name) AS full_name
+     FROM officials_masterlist o
+     ORDER BY o.last_name, o.first_name'
+);
 ?>
 <!doctype html>
 <html lang="en">
@@ -69,7 +84,7 @@ $unitRows = all_rows('SELECT * FROM unit ORDER BY unit_name');
     <img class="brand-logo" src="../assets/images/logo.png" width="44" height="44" alt="MSU-MCEST logo" />
     <div>
       <div class="text-sm font-semibold leading-tight">MSU-MCEST</div>
-      <div class="text-xs text-white/60">Equipment Mgmt</div>
+      <div class="text-xs text-white/60">Inventory System</div>
     </div>
   </div>
   <nav class="flex-1 py-4 text-sm">
@@ -142,11 +157,11 @@ $unitRows = all_rows('SELECT * FROM unit ORDER BY unit_name');
           <table class="table">
             <thead><tr>
               <th>Item Code</th><th>Item Name</th><th>Category</th><th>Qty</th><th>Available</th>
-              <th>Condition</th><th>Status</th><th class="text-right">Actions</th>
+              <th>Owner</th><th>Added By</th><th>Condition</th><th>Status</th><th class="text-right">Actions</th>
             </tr></thead>
             <tbody>
               <?php if (!$equipmentRows): ?>
-                <tr><td colspan="8"><div class="empty"><div class="icon">-</div><p class="font-medium text-gray-700">No equipment yet</p><p class="text-sm">Click Add Equipment to add your first item.</p></div></td></tr>
+                <tr><td colspan="10"><div class="empty"><div class="icon">-</div><p class="font-medium text-gray-700">No equipment yet</p><p class="text-sm">Click Add Equipment to add your first item.</p></div></td></tr>
               <?php else: foreach ($equipmentRows as $item):
                 $itemCode = meta_value($item['description'], 'Item code') ?: $item['item_id'];
                 $condition = meta_value($item['description'], 'Condition') ?: 'Good';
@@ -159,6 +174,8 @@ $unitRows = all_rows('SELECT * FROM unit ORDER BY unit_name');
                   <td><?php echo h($item['category_name'] ?? 'Uncategorized'); ?></td>
                   <td><?php echo h($item['total_quantity']); ?></td>
                   <td><?php echo h($item['available_quantity']); ?></td>
+                  <td><?php echo h($item['owner_name'] ?: 'Unassigned'); ?></td>
+                  <td><?php echo h($item['added_by_name'] ?: 'Unknown'); ?></td>
                   <td><?php echo h($condition); ?></td>
                   <td><?php echo h($displayStatus); ?></td>
                   <td class="text-right space-x-2">
@@ -170,6 +187,7 @@ $unitRows = all_rows('SELECT * FROM unit ORDER BY unit_name');
                       data-name="<?php echo h($item['item_name']); ?>"
                       data-category-id="<?php echo h($item['category_id']); ?>"
                       data-unit-id="<?php echo h($item['unit_id']); ?>"
+                      data-owner-official-id="<?php echo h($item['received_by_official_id']); ?>"
                       data-quantity="<?php echo h($item['total_quantity']); ?>"
                       data-condition="<?php echo h($condition); ?>"
                       data-status="<?php echo h($displayStatus); ?>"
@@ -215,6 +233,15 @@ $unitRows = all_rows('SELECT * FROM unit ORDER BY unit_name');
               <?php endforeach; ?>
             </select>
           </div>
+          <div class="md:col-span-2"><label class="label">Owner (Official)</label>
+            <input class="input mb-2" type="search" placeholder="Search owner by name or ID..." data-owner-search />
+            <select class="select" name="owner_official_id" required>
+              <option value="">Select official owner</option>
+              <?php foreach ($facultyOwnerRows as $owner): ?>
+                <option value="<?php echo h($owner['official_id']); ?>"><?php echo h($owner['full_name']); ?> (<?php echo h($owner['official_id']); ?>)</option>
+              <?php endforeach; ?>
+            </select>
+          </div>
           <div><label class="label">Quantity</label><input class="input" type="number" name="quantity" min="0" required /></div>
           <div><label class="label">Condition</label>
             <select class="select" name="condition"><option>Good</option><option>Fair</option><option>Needs repair</option></select>
@@ -234,15 +261,47 @@ $unitRows = all_rows('SELECT * FROM unit ORDER BY unit_name');
   </div>
   <script src="../js/shared.js"></script>
   <script>
+    function setupOwnerSearch(form) {
+      var search = form.querySelector('[data-owner-search]');
+      var select = form.elements.owner_official_id;
+      if (!search || !select) {
+        return;
+      }
+
+      var options = Array.prototype.slice.call(select.options).map(function (option) {
+        return {
+          option: option,
+          text: (option.textContent + ' ' + option.value).toLowerCase(),
+          isPlaceholder: option.value === ''
+        };
+      });
+
+      search.addEventListener('input', function () {
+        var term = search.value.trim().toLowerCase();
+        options.forEach(function (entry) {
+          entry.option.hidden = !entry.isPlaceholder && term !== '' && entry.text.indexOf(term) === -1;
+        });
+
+        if (select.value && select.selectedOptions[0] && select.selectedOptions[0].hidden) {
+          select.value = '';
+        }
+      });
+    }
+
+    setupOwnerSearch(document.querySelector('#addEquipmentModal form'));
+
     document.querySelectorAll('[data-edit-equipment]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var form = document.querySelector('#addEquipmentModal form');
         document.querySelector('#addEquipmentModal h3').textContent = 'Edit Equipment';
+        form.querySelector('[data-owner-search]').value = '';
+        form.querySelector('[data-owner-search]').dispatchEvent(new Event('input'));
         form.elements.id.value = btn.dataset.id || '';
         form.elements.item_code.value = btn.dataset.code || '';
         form.elements.item_name.value = btn.dataset.name || '';
         form.elements.category_id.value = btn.dataset.categoryId || '';
         form.elements.unit_id.value = btn.dataset.unitId || '';
+        form.elements.owner_official_id.value = btn.dataset.ownerOfficialId || '';
         form.elements.quantity.value = btn.dataset.quantity || 0;
         form.elements.condition.value = btn.dataset.condition || 'Good';
         form.elements.status.value = btn.dataset.status || 'Available';
@@ -254,6 +313,7 @@ $unitRows = all_rows('SELECT * FROM unit ORDER BY unit_name');
         var form = document.querySelector('#addEquipmentModal form');
         document.querySelector('#addEquipmentModal h3').textContent = 'Add Equipment';
         form.reset();
+        form.querySelector('[data-owner-search]').dispatchEvent(new Event('input'));
         form.elements.id.value = '';
       });
     });

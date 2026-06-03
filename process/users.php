@@ -20,6 +20,7 @@ function update_user_role(PDO $pdo, $userId, $username, $newRole)
     }
 
     db_exec($pdo, 'UPDATE users SET role = ?, is_active = 1 WHERE user_id = ?', [$role, $user['user_id']]);
+    db_exec($pdo, 'UPDATE users SET approval_status = "approved" WHERE user_id = ?', [$user['user_id']]);
     log_audit(
         $pdo,
         'user_role_update',
@@ -63,10 +64,51 @@ try {
         }
 
         $pdo->beginTransaction();
-        db_exec($pdo, 'UPDATE users SET is_active = 0 WHERE user_id = ?', [$userId]);
+        db_exec($pdo, 'UPDATE users SET is_active = 0, approval_status = "approved" WHERE user_id = ?', [$userId]);
         log_audit($pdo, 'user_deactivate', 'users', $userId);
         $pdo->commit();
         respond_success('../pages/users.php', 'deactivated');
+    }
+
+    if ($action === 'approve' && $userId > 0) {
+        if (!can_manage_user_roles($_SESSION['role'] ?? '')) {
+            respond_error('../pages/users.php', 'not_allowed', 'Only administrators can approve user accounts.');
+        }
+
+        $pdo->beginTransaction();
+        $stmt = db_exec($pdo, 'SELECT user_id, username, approval_status FROM users WHERE user_id = ? FOR UPDATE', [$userId]);
+        $user = $stmt->fetch();
+
+        if (!$user) {
+            throw new RuntimeException('User not found.');
+        }
+
+        db_exec($pdo, 'UPDATE users SET is_active = 1, approval_status = "approved" WHERE user_id = ?', [$userId]);
+        log_audit($pdo, 'user_approve', 'users', $userId, ['username' => $user['username'], 'old_status' => $user['approval_status']]);
+        $pdo->commit();
+        respond_success('../pages/users.php', 'approved');
+    }
+
+    if ($action === 'reject' && $userId > 0) {
+        if (!can_manage_user_roles($_SESSION['role'] ?? '')) {
+            respond_error('../pages/users.php', 'not_allowed', 'Only administrators can reject user accounts.');
+        }
+        if ($userId === (int) ($_SESSION['user_id'] ?? 0)) {
+            respond_error('../pages/users.php', 'self_reject', 'You cannot reject your own account.');
+        }
+
+        $pdo->beginTransaction();
+        $stmt = db_exec($pdo, 'SELECT user_id, username FROM users WHERE user_id = ? FOR UPDATE', [$userId]);
+        $user = $stmt->fetch();
+
+        if (!$user) {
+            throw new RuntimeException('User not found.');
+        }
+
+        db_exec($pdo, 'UPDATE users SET is_active = 0, approval_status = "rejected" WHERE user_id = ?', [$userId]);
+        log_audit($pdo, 'user_reject', 'users', $userId, ['username' => $user['username']]);
+        $pdo->commit();
+        respond_success('../pages/users.php', 'rejected');
     }
 
     if ($action === 'reactivate' && $userId > 0) {
@@ -82,7 +124,7 @@ try {
             throw new RuntimeException('User not found.');
         }
 
-        db_exec($pdo, 'UPDATE users SET is_active = 1 WHERE user_id = ?', [$userId]);
+        db_exec($pdo, 'UPDATE users SET is_active = 1, approval_status = "approved" WHERE user_id = ?', [$userId]);
         log_audit($pdo, 'user_reactivate', 'users', $userId, ['username' => $user['username']]);
         $pdo->commit();
         respond_success('../pages/users.php', 'reactivated');

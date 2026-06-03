@@ -12,6 +12,8 @@ $condition = post_value('condition');
 $postedStatus = strtolower(post_value('status'));
 $status = $postedStatus === 'maintenance' ? 'inactive' : 'active';
 $description = post_value('description');
+$ownerOfficialId = post_value('owner_official_id');
+$actorUserId = (int) ($_SESSION['user_id'] ?? 0);
 
 try {
     if ($action === 'delete' && $itemId > 0) {
@@ -45,6 +47,7 @@ try {
 
     $categoryId = require_existing_category_id($pdo, post_value('category_id'), post_value('category'));
     $unitId = require_existing_unit_id($pdo, post_value('unit_id'), post_value('unit') ?: 'pcs');
+    $ownerOfficialId = require_existing_owner_official_id($pdo, $ownerOfficialId);
     assert_item_not_duplicate($pdo, $itemName, $categoryId, $itemId);
 
     $notes = trim($description . "\nType: Equipment\nItem code: " . $itemCode . "\nCondition: " . $condition);
@@ -76,23 +79,24 @@ try {
             $pdo,
             'UPDATE items
              SET item_name = ?, description = ?, unit_id = ?, category_id = ?,
-                 total_quantity = ?, available_quantity = ?, status = ?, stock_status = ?
+                 total_quantity = ?, available_quantity = ?, status = ?, stock_status = ?,
+                 received_by_official_id = ?, updated_by_user_id = ?
              WHERE item_id = ?',
-            [$itemName, $notes, $unitId, $categoryId, $quantity, $availableQuantity, $status, $stockStatus, $itemId]
+            [$itemName, $notes, $unitId, $categoryId, $quantity, $availableQuantity, $status, $stockStatus, $ownerOfficialId, $actorUserId, $itemId]
         );
-        log_audit($pdo, 'item_update', 'items', $itemId, ['item_name' => $itemName, 'type' => 'equipment']);
+        log_audit($pdo, 'item_update', 'items', $itemId, ['item_name' => $itemName, 'type' => 'equipment', 'owner_official_id' => $ownerOfficialId]);
     } else {
         $stockStatus = inventory_stock_status($quantity);
 
         db_exec(
             $pdo,
             'INSERT INTO items
-                (item_name, description, unit_id, category_id, total_quantity, available_quantity, date_added, status, stock_status)
-             VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, ?)',
-            [$itemName, $notes, $unitId, $categoryId, $quantity, $quantity, $status, $stockStatus]
+                (item_name, description, unit_id, category_id, total_quantity, available_quantity, received_by_official_id, created_by_user_id, updated_by_user_id, date_added, status, stock_status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?)',
+            [$itemName, $notes, $unitId, $categoryId, $quantity, $quantity, $ownerOfficialId, $actorUserId, $actorUserId, $status, $stockStatus]
         );
         $itemId = (int) $pdo->lastInsertId();
-        log_audit($pdo, 'item_create', 'items', $itemId, ['item_name' => $itemName, 'type' => 'equipment']);
+        log_audit($pdo, 'item_create', 'items', $itemId, ['item_name' => $itemName, 'type' => 'equipment', 'owner_official_id' => $ownerOfficialId]);
     }
 
     $pdo->commit();

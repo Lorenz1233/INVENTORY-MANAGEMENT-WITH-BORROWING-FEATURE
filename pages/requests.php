@@ -2,15 +2,28 @@
 require_once __DIR__ . '/../partials/page-data.php';
 require_borrow_workflow_manager();
 
+[$ownerWhere, $ownerParams] = borrow_owner_filter_sql('i', 'br');
 $requestRows = all_rows(
     'SELECT br.*,
+            COALESCE(NULLIF(br.purpose, ""), NULLIF(br.remarks, "")) AS request_purpose,
             DATE_ADD(br.request_date, INTERVAL br.days_to_borrow DAY) AS due_date,
             i.item_name,
-            CONCAT(m.first_name, " ", m.last_name) AS borrower_name
+            COALESCE(
+                NULLIF(TRIM(CONCAT(COALESCE(m.first_name, ""), " ", COALESCE(m.last_name, ""))), ""),
+                NULLIF(TRIM(CONCAT(COALESCE(bo.first_name, ""), " ", COALESCE(bo.last_name, ""))), ""),
+                borrower.username
+            ) AS borrower_name,
+            COALESCE(borrower.username, br.student_id) AS borrower_number,
+            CONCAT(o.first_name, " ", o.last_name) AS owner_name
      FROM borrow_request br
      JOIN items i ON i.item_id = br.item_id
-     JOIN master_list m ON m.student_id = br.student_id
-     ORDER BY br.created_at DESC'
+     LEFT JOIN users borrower ON borrower.user_id = br.borrower_user_id
+     LEFT JOIN master_list m ON m.student_id = COALESCE(borrower.student_id, br.student_id)
+     LEFT JOIN officials_masterlist bo ON bo.official_id = borrower.official_id
+     LEFT JOIN officials_masterlist o ON o.official_id = COALESCE(br.owner_official_id, i.received_by_official_id)
+     WHERE ' . $ownerWhere . '
+     ORDER BY br.created_at DESC',
+    $ownerParams
 );
 ?>
 <!doctype html>
@@ -35,7 +48,7 @@ $requestRows = all_rows(
     <img class="brand-logo" src="../assets/images/logo.png" width="44" height="44" alt="MSU-MCEST logo" />
     <div>
       <div class="text-sm font-semibold leading-tight">MSU-MCEST</div>
-      <div class="text-xs text-white/60">Equipment Mgmt</div>
+      <div class="text-xs text-white/60">Inventory System</div>
     </div>
   </div>
   <nav class="flex-1 py-4 text-sm">
@@ -89,24 +102,26 @@ $requestRows = all_rows(
         <div class="overflow-x-auto" id="requestsTable">
           <table class="table">
             <thead><tr>
-              <th>Request #</th><th>Student</th><th>Student ID</th><th>Item</th><th>Qty</th>
-              <th>Requested</th><th>Borrow Date</th><th>Due Date</th><th>Status</th><th class="text-right">Actions</th>
+              <th>Request #</th><th>Borrower</th><th>ID Number</th><th>Item</th><th>Qty</th>
+              <th>Owner</th><th>Requested</th><th>Borrow Date</th><th>Due Date</th><th>Purpose</th><th>Status</th><th class="text-right">Actions</th>
             </tr></thead>
             <tbody>
               <?php if (!$requestRows): ?>
-                <tr><td colspan="10"><div class="empty"><div class="icon">-</div><p class="font-medium text-gray-700">No borrow requests</p><p class="text-sm">Submitted requests will appear here.</p></div></td></tr>
+                <tr><td colspan="12"><div class="empty"><div class="icon">-</div><p class="font-medium text-gray-700">No borrow requests</p><p class="text-sm">Submitted requests will appear here.</p></div></td></tr>
               <?php else: foreach ($requestRows as $request):
                 $statusKey = strtolower($request['status']);
               ?>
                 <tr data-status="<?php echo h($statusKey); ?>" data-searchable>
                   <td>#<?php echo h($request['request_id']); ?></td>
                   <td><?php echo h($request['borrower_name']); ?></td>
-                  <td><?php echo h($request['student_id']); ?></td>
+                  <td><?php echo h($request['borrower_number']); ?></td>
                   <td><?php echo h($request['item_name']); ?></td>
                   <td><?php echo h($request['quantity_requested']); ?></td>
+                  <td><?php echo h($request['owner_name'] ?: 'Unassigned'); ?></td>
                   <td><?php echo h($request['created_at']); ?></td>
                   <td><?php echo h($request['request_date']); ?></td>
                   <td><?php echo h($request['due_date']); ?></td>
+                  <td class="max-w-xs whitespace-normal"><?php echo h($request['request_purpose'] ?: '-'); ?></td>
                   <td><?php echo badge($request['status']); ?></td>
                   <td class="text-right space-x-2">
                     <?php if ($request['status'] === 'PENDING'): ?>

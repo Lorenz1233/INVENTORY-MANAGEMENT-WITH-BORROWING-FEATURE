@@ -39,9 +39,15 @@ function current_user()
     }
 
     return all_rows(
-        'SELECT u.*, m.first_name, m.last_name, m.course_code, m.year_level
+        'SELECT u.*,
+                COALESCE(m.first_name, o.first_name) AS first_name,
+                COALESCE(m.last_name, o.last_name) AS last_name,
+                m.course_code,
+                m.year_level,
+                o.position_code
          FROM users u
          LEFT JOIN master_list m ON m.student_id = u.student_id
+         LEFT JOIN officials_masterlist o ON o.official_id = u.official_id
          WHERE u.user_id = ?
          LIMIT 1',
         [$_SESSION['user_id']]
@@ -68,7 +74,23 @@ function initials($name)
 
 function pending_request_count()
 {
-    return (int) one_value('SELECT COUNT(*) FROM borrow_request WHERE status = "PENDING"');
+    if (($_SESSION['role'] ?? '') === 'admin') {
+        return (int) one_value('SELECT COUNT(*) FROM borrow_request WHERE status = "PENDING"');
+    }
+
+    $officialId = current_official_id();
+    if ($officialId === '') {
+        return 0;
+    }
+
+    return (int) one_value(
+        'SELECT COUNT(*)
+         FROM borrow_request br
+         JOIN items i ON i.item_id = br.item_id
+         WHERE br.status = "PENDING"
+            AND COALESCE(br.owner_official_id, i.received_by_official_id) = ?',
+        [$officialId]
+    );
 }
 
 function material_condition($itemAlias = 'i', $categoryAlias = 'c')

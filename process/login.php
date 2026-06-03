@@ -10,11 +10,23 @@ if ($username === '' || $password === '') {
     redirect_to('../pages/login.php', ['error' => 'missing']);
 }
 
-$stmt = db_exec($pdo, 'SELECT * FROM users WHERE username = ? AND is_active = 1 LIMIT 1', [$username]);
+$stmt = db_exec($pdo, 'SELECT * FROM users WHERE username = ? LIMIT 1', [$username]);
 $user = $stmt->fetch();
 
 if (!$user || !password_matches($password, $user['password'])) {
     redirect_to('../pages/login.php', ['error' => 'invalid']);
+}
+
+if (($user['approval_status'] ?? 'approved') === 'pending') {
+    redirect_to('../pages/login.php', ['error' => 'pending']);
+}
+
+if (($user['approval_status'] ?? 'approved') === 'rejected') {
+    redirect_to('../pages/login.php', ['error' => 'rejected']);
+}
+
+if ((int) $user['is_active'] !== 1) {
+    redirect_to('../pages/login.php', ['error' => 'inactive']);
 }
 
 $_SESSION['user_id'] = (int) $user['user_id'];

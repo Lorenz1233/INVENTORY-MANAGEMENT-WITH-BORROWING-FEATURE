@@ -2,28 +2,45 @@
 require_once __DIR__ . '/../partials/page-data.php';
 require_borrower();
 
-$studentId = (int) ($currentUser['student_id'] ?? $_SESSION['student_id'] ?? 0);
-$activeRequests = (int) one_value('SELECT COUNT(*) FROM borrow_request WHERE student_id = ? AND status = "PENDING"', [$studentId]);
-$approvedRequests = (int) one_value('SELECT COUNT(*) FROM borrow_request WHERE student_id = ? AND status = "APPROVED"', [$studentId]);
-$borrowedItems = (int) one_value('SELECT COUNT(*) FROM transactions WHERE student_id = ? AND status IN ("PENDING", "ONGOING")', [$studentId]);
-$returnedItems = (int) one_value('SELECT COUNT(*) FROM transactions WHERE student_id = ? AND status = "RETURNED"', [$studentId]);
+[$borrowerWhere, $borrowerParams] = current_borrower_filter_sql('br');
+$activeRequests = (int) one_value('SELECT COUNT(*) FROM borrow_request br WHERE ' . $borrowerWhere . ' AND br.status = "PENDING"', $borrowerParams);
+$approvedRequests = (int) one_value('SELECT COUNT(*) FROM borrow_request br WHERE ' . $borrowerWhere . ' AND br.status = "APPROVED"', $borrowerParams);
+$borrowedItems = (int) one_value(
+    'SELECT COUNT(*)
+     FROM transactions t
+     JOIN borrow_request br ON br.request_id = t.request_id
+     WHERE ' . $borrowerWhere . ' AND t.status IN ("PENDING", "ONGOING")',
+    $borrowerParams
+);
+$returnedItems = (int) one_value(
+    'SELECT COUNT(*)
+     FROM transactions t
+     JOIN borrow_request br ON br.request_id = t.request_id
+     WHERE ' . $borrowerWhere . ' AND t.status = "RETURNED"',
+    $borrowerParams
+);
 $recentRequests = all_rows(
     'SELECT br.*, i.item_name, t.status AS transaction_status
      FROM borrow_request br
      JOIN items i ON i.item_id = br.item_id
      LEFT JOIN transactions t ON t.request_id = br.request_id
-     WHERE br.student_id = ?
+     WHERE ' . $borrowerWhere . '
      ORDER BY br.created_at DESC
      LIMIT 5',
-    [$studentId]
+    $borrowerParams
 );
+$portalLabel = ($currentUser['role'] ?? '') === 'faculty' ? 'Faculty Portal' : 'Student Portal';
+$profileLine = ($currentUser['role'] ?? '') === 'faculty'
+    ? ($currentUser['position_code'] ?? 'Faculty')
+    : trim(($currentUser['course_code'] ?? 'Student') . (($currentUser['year_level'] ?? '') ? ' - ' . $currentUser['year_level'] : ''));
+$dashboardTitle = ($currentUser['role'] ?? '') === 'faculty' ? 'Faculty Borrowing Dashboard' : 'Student Dashboard';
 ?>
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Student Dashboard • MSU-MCEST CEMS</title>
+  <title>Student Dashboard • MSU-MCEST</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="../css/app.css" />
   <script>
@@ -40,7 +57,7 @@ $recentRequests = all_rows(
     <img class="brand-logo" src="../assets/images/logo.png" width="44" height="44" alt="MSU-MCEST logo" />
     <div>
       <div class="text-sm font-semibold leading-tight">MSU-MCEST</div>
-      <div class="text-xs text-white/60">Student Portal</div>
+      <div class="text-xs text-white/60"><?php echo h($portalLabel); ?></div>
     </div>
   </div>
   <nav class="flex-1 py-4 text-sm">
@@ -55,7 +72,7 @@ $recentRequests = all_rows(
     <div class="w-9 h-9 rounded-full bg-white/10 grid place-items-center text-sm font-semibold"><?php echo h($currentInitials); ?></div>
     <div class="text-sm leading-tight">
       <div class="font-medium"><?php echo h($currentName); ?></div>
-      <div class="text-white/50 text-xs"><?php echo h(trim(($currentUser['course_code'] ?? 'Student') . (($currentUser['year_level'] ?? '') ? ' - ' . $currentUser['year_level'] : ''))); ?></div>
+      <div class="text-white/50 text-xs"><?php echo h($profileLine); ?></div>
     </div>
     <a href="../process/logout.php" class="ml-auto text-white/60 hover:text-gold text-xs" data-confirm="Log out now?">Logout</a>
   </div>
@@ -65,7 +82,7 @@ $recentRequests = all_rows(
       <div class="px-6 py-4 flex flex-wrap items-center gap-4">
         <button data-sidebar-toggle class="md:hidden inline-flex items-center justify-center w-9 h-9 rounded-md border border-gray-200 text-navy">☰</button>
         <div class="min-w-0">
-          <h1 class="text-lg font-semibold text-navy leading-tight whitespace-nowrap">Student Dashboard</h1>
+          <h1 class="text-lg font-semibold text-navy leading-tight whitespace-nowrap"><?php echo h($dashboardTitle); ?></h1>
           <p class="text-xs text-gray-500">Your borrowing overview</p>
         </div>
         <div class="ml-auto flex items-center gap-2 flex-wrap justify-end"></div>

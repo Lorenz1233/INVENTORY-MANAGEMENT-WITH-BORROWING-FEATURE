@@ -143,6 +143,15 @@ function ensure_system_schema(PDO $pdo)
         db_exec($pdo, 'ALTER TABLE users MODIFY student_id INT(11) NULL');
     }
 
+    if (table_exists($pdo, 'users') && !column_exists($pdo, 'users', 'approval_status')) {
+        db_exec(
+            $pdo,
+            'ALTER TABLE users
+             ADD COLUMN approval_status ENUM("approved","pending","rejected") NOT NULL DEFAULT "approved" AFTER is_active'
+        );
+        db_exec($pdo, 'UPDATE users SET approval_status = "approved"');
+    }
+
     if (table_exists($pdo, 'users') && column_exists($pdo, 'users', 'official_id') && !index_exists($pdo, 'users', 'idx_official_id')) {
         db_exec($pdo, 'ALTER TABLE users ADD UNIQUE KEY idx_official_id (official_id)');
     }
@@ -162,6 +171,210 @@ function ensure_system_schema(PDO $pdo)
         );
     }
 
+    if (table_exists($pdo, 'items') && !column_exists($pdo, 'items', 'received_by_official_id')) {
+        db_exec($pdo, 'ALTER TABLE items ADD COLUMN received_by_official_id VARCHAR(50) NULL AFTER min_quantity_alert');
+    }
+
+    if (table_exists($pdo, 'items') && column_exists($pdo, 'items', 'received_by_official_id') && !index_exists($pdo, 'items', 'idx_items_owner')) {
+        db_exec($pdo, 'ALTER TABLE items ADD KEY idx_items_owner (received_by_official_id)');
+    }
+
+    if (table_exists($pdo, 'items') && !column_exists($pdo, 'items', 'created_by_user_id')) {
+        db_exec($pdo, 'ALTER TABLE items ADD COLUMN created_by_user_id INT NULL AFTER received_by_official_id');
+    }
+
+    if (table_exists($pdo, 'items') && !column_exists($pdo, 'items', 'updated_by_user_id')) {
+        db_exec($pdo, 'ALTER TABLE items ADD COLUMN updated_by_user_id INT NULL AFTER created_by_user_id');
+    }
+
+    if (table_exists($pdo, 'items') && column_exists($pdo, 'items', 'created_by_user_id') && !index_exists($pdo, 'items', 'idx_items_created_by')) {
+        db_exec($pdo, 'ALTER TABLE items ADD KEY idx_items_created_by (created_by_user_id)');
+    }
+
+    if (table_exists($pdo, 'items') && column_exists($pdo, 'items', 'updated_by_user_id') && !index_exists($pdo, 'items', 'idx_items_updated_by')) {
+        db_exec($pdo, 'ALTER TABLE items ADD KEY idx_items_updated_by (updated_by_user_id)');
+    }
+
+    if (table_exists($pdo, 'borrow_request') && !column_exists($pdo, 'borrow_request', 'owner_official_id')) {
+        db_exec($pdo, 'ALTER TABLE borrow_request ADD COLUMN owner_official_id VARCHAR(50) NULL AFTER item_id');
+    }
+
+    if (table_exists($pdo, 'borrow_request') && column_exists($pdo, 'borrow_request', 'student_id') && !column_is_nullable($pdo, 'borrow_request', 'student_id')) {
+        db_exec($pdo, 'ALTER TABLE borrow_request MODIFY student_id INT(11) NULL');
+    }
+
+    if (table_exists($pdo, 'borrow_request') && !column_exists($pdo, 'borrow_request', 'borrower_user_id')) {
+        db_exec($pdo, 'ALTER TABLE borrow_request ADD COLUMN borrower_user_id INT NULL AFTER student_id');
+    }
+
+    if (table_exists($pdo, 'borrow_request') && column_exists($pdo, 'borrow_request', 'borrower_user_id') && !index_exists($pdo, 'borrow_request', 'idx_borrow_borrower_user')) {
+        db_exec($pdo, 'ALTER TABLE borrow_request ADD KEY idx_borrow_borrower_user (borrower_user_id)');
+    }
+
+    if (table_exists($pdo, 'borrow_request') && !column_exists($pdo, 'borrow_request', 'purpose')) {
+        db_exec($pdo, 'ALTER TABLE borrow_request ADD COLUMN purpose VARCHAR(500) NULL AFTER days_to_borrow');
+        if (column_exists($pdo, 'borrow_request', 'remarks')) {
+            db_exec($pdo, 'UPDATE borrow_request SET purpose = remarks WHERE purpose IS NULL AND remarks IS NOT NULL');
+        }
+    }
+
+    if (table_exists($pdo, 'borrow_request') && !column_exists($pdo, 'borrow_request', 'process_remarks')) {
+        db_exec($pdo, 'ALTER TABLE borrow_request ADD COLUMN process_remarks VARCHAR(500) NULL AFTER remarks');
+    }
+
+    if (table_exists($pdo, 'borrow_request') && column_exists($pdo, 'borrow_request', 'owner_official_id') && !index_exists($pdo, 'borrow_request', 'idx_borrow_owner')) {
+        db_exec($pdo, 'ALTER TABLE borrow_request ADD KEY idx_borrow_owner (owner_official_id)');
+    }
+
+    if (table_exists($pdo, 'borrow_request') && column_exists($pdo, 'borrow_request', 'owner_official_id') && table_exists($pdo, 'items')) {
+        db_exec(
+            $pdo,
+            'UPDATE borrow_request br
+             JOIN items i ON i.item_id = br.item_id
+             SET br.owner_official_id = i.received_by_official_id
+             WHERE br.owner_official_id IS NULL AND i.received_by_official_id IS NOT NULL'
+        );
+    }
+
+    if (table_exists($pdo, 'borrow_request') && column_exists($pdo, 'borrow_request', 'borrower_user_id') && table_exists($pdo, 'users')) {
+        db_exec(
+            $pdo,
+            'UPDATE borrow_request br
+             JOIN users u ON u.student_id = br.student_id
+             SET br.borrower_user_id = u.user_id
+             WHERE br.borrower_user_id IS NULL'
+        );
+    }
+
+    if (table_exists($pdo, 'transactions') && column_exists($pdo, 'transactions', 'student_id') && !column_is_nullable($pdo, 'transactions', 'student_id')) {
+        db_exec($pdo, 'ALTER TABLE transactions MODIFY student_id INT(11) NULL');
+    }
+
+    if (table_exists($pdo, 'transactions') && !column_exists($pdo, 'transactions', 'borrower_user_id')) {
+        db_exec($pdo, 'ALTER TABLE transactions ADD COLUMN borrower_user_id INT NULL AFTER student_id');
+    }
+
+    if (table_exists($pdo, 'transactions') && column_exists($pdo, 'transactions', 'borrower_user_id') && !index_exists($pdo, 'transactions', 'idx_transactions_borrower_user')) {
+        db_exec($pdo, 'ALTER TABLE transactions ADD KEY idx_transactions_borrower_user (borrower_user_id)');
+    }
+
+    if (table_exists($pdo, 'transactions') && column_exists($pdo, 'transactions', 'borrower_user_id') && table_exists($pdo, 'users')) {
+        db_exec(
+            $pdo,
+            'UPDATE transactions t
+             JOIN users u ON u.student_id = t.student_id
+             SET t.borrower_user_id = u.user_id
+             WHERE t.borrower_user_id IS NULL'
+        );
+    }
+
+    if (!table_exists($pdo, 'borrow_appointments')) {
+        db_exec(
+            $pdo,
+            'CREATE TABLE IF NOT EXISTS borrow_appointments (
+                appointment_id INT NOT NULL AUTO_INCREMENT,
+                request_id INT NOT NULL,
+                student_id INT NULL,
+                borrower_user_id INT NULL,
+                item_id INT NOT NULL,
+                owner_official_id VARCHAR(50) NULL,
+                appointment_date DATE NOT NULL,
+                appointment_end_date DATE NOT NULL,
+                status ENUM("SCHEDULED","COMPLETED","CANCELLED") NOT NULL DEFAULT "SCHEDULED",
+                notes VARCHAR(500) NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (appointment_id),
+                UNIQUE KEY idx_appointment_request (request_id),
+                KEY idx_appointment_borrower_user (borrower_user_id),
+                KEY idx_appointment_item_date (item_id, appointment_date),
+                KEY idx_appointment_owner (owner_official_id),
+                KEY idx_appointment_status (status)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci'
+        );
+    }
+
+    if (table_exists($pdo, 'borrow_appointments') && column_exists($pdo, 'borrow_appointments', 'student_id') && !column_is_nullable($pdo, 'borrow_appointments', 'student_id')) {
+        db_exec($pdo, 'ALTER TABLE borrow_appointments MODIFY student_id INT NULL');
+    }
+
+    if (table_exists($pdo, 'borrow_appointments') && !column_exists($pdo, 'borrow_appointments', 'borrower_user_id')) {
+        db_exec($pdo, 'ALTER TABLE borrow_appointments ADD COLUMN borrower_user_id INT NULL AFTER student_id');
+    }
+
+    if (table_exists($pdo, 'borrow_appointments') && column_exists($pdo, 'borrow_appointments', 'borrower_user_id') && !index_exists($pdo, 'borrow_appointments', 'idx_appointment_borrower_user')) {
+        db_exec($pdo, 'ALTER TABLE borrow_appointments ADD KEY idx_appointment_borrower_user (borrower_user_id)');
+    }
+
+    if (table_exists($pdo, 'borrow_appointments') && table_exists($pdo, 'borrow_request') && table_exists($pdo, 'transactions')) {
+        db_exec(
+            $pdo,
+            'INSERT INTO borrow_appointments
+                (request_id, student_id, borrower_user_id, item_id, owner_official_id, appointment_date, appointment_end_date, status, notes)
+             SELECT br.request_id,
+                    br.student_id,
+                    br.borrower_user_id,
+                    br.item_id,
+                    br.owner_official_id,
+                    br.request_date,
+                    DATE_ADD(br.request_date, INTERVAL br.days_to_borrow DAY),
+                    CASE WHEN COALESCE(t.returned_count, 0) > 0 THEN "COMPLETED" ELSE "SCHEDULED" END,
+                    COALESCE(br.process_remarks, br.purpose, br.remarks)
+             FROM borrow_request br
+             LEFT JOIN (
+                SELECT request_id, SUM(status = "RETURNED") AS returned_count
+                FROM transactions
+                GROUP BY request_id
+             ) t ON t.request_id = br.request_id
+             WHERE br.status = "APPROVED"
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM borrow_appointments ba
+                    WHERE ba.request_id = br.request_id
+                )'
+        );
+    }
+
+    if (table_exists($pdo, 'borrow_appointments') && column_exists($pdo, 'borrow_appointments', 'borrower_user_id') && table_exists($pdo, 'borrow_request')) {
+        db_exec(
+            $pdo,
+            'UPDATE borrow_appointments ba
+             JOIN borrow_request br ON br.request_id = ba.request_id
+             SET ba.borrower_user_id = br.borrower_user_id
+             WHERE ba.borrower_user_id IS NULL'
+        );
+    }
+
+    if (table_exists($pdo, 'items') && column_exists($pdo, 'items', 'created_by_user_id') && table_exists($pdo, 'audit_log')) {
+        db_exec(
+            $pdo,
+            'UPDATE items i
+             JOIN (
+                SELECT a.record_id, MIN(a.actor_user_id) AS actor_user_id
+                FROM audit_log a
+                WHERE a.action_type IN ("item_create", "item_import_row")
+                    AND a.table_name = "items"
+                    AND a.actor_user_id IS NOT NULL
+                GROUP BY a.record_id
+             ) creator ON creator.record_id = CAST(i.item_id AS CHAR)
+             SET i.created_by_user_id = creator.actor_user_id
+             WHERE i.created_by_user_id IS NULL'
+        );
+    }
+
+    if (table_exists($pdo, 'items') && column_exists($pdo, 'items', 'received_by_official_id') && column_exists($pdo, 'items', 'created_by_user_id') && table_exists($pdo, 'users') && table_exists($pdo, 'officials_masterlist')) {
+        db_exec(
+            $pdo,
+            'UPDATE items i
+             JOIN users u ON u.user_id = i.created_by_user_id
+             JOIN officials_masterlist o ON o.official_id = u.official_id
+             SET i.received_by_official_id = u.official_id
+             WHERE (i.received_by_official_id IS NULL OR i.received_by_official_id = "")
+                AND u.official_id IS NOT NULL
+                AND u.official_id <> ""'
+        );
+    }
+
     if (table_exists($pdo, 'items') && column_exists($pdo, 'items', 'stock_status')) {
         db_exec(
             $pdo,
@@ -173,6 +386,9 @@ function ensure_system_schema(PDO $pdo)
              END'
         );
     }
+
+    release_future_appointment_stock($pdo);
+    activate_due_borrow_appointments($pdo);
 
     $checked = true;
 }
@@ -376,7 +592,12 @@ function is_admin_role($role)
 
 function can_manage_borrow_workflow($role)
 {
-    return $role === 'admin';
+    return in_array($role, ['admin', 'faculty'], true);
+}
+
+function can_borrow_equipment($role)
+{
+    return in_array($role, ['student', 'faculty'], true);
 }
 
 function can_manage_user_roles($role)
@@ -402,6 +623,76 @@ function require_borrow_workflow_manager()
     }
 }
 
+function current_official_id()
+{
+    return clean($_SESSION['official_id'] ?? '');
+}
+
+function current_borrower_user_id()
+{
+    return (int) ($_SESSION['user_id'] ?? 0);
+}
+
+function current_borrower_student_id()
+{
+    $studentId = (int) ($_SESSION['student_id'] ?? 0);
+    return $studentId > 0 ? $studentId : null;
+}
+
+function current_borrower_filter_sql($alias = 'br')
+{
+    $userId = current_borrower_user_id();
+    $studentId = current_borrower_student_id();
+
+    if ($studentId !== null) {
+        return [
+            "({$alias}.borrower_user_id = ? OR ({$alias}.borrower_user_id IS NULL AND {$alias}.student_id = ?))",
+            [$userId, $studentId],
+        ];
+    }
+
+    return ["{$alias}.borrower_user_id = ?", [$userId]];
+}
+
+function is_admin_user()
+{
+    return ($_SESSION['role'] ?? '') === 'admin';
+}
+
+function borrow_owner_filter_sql($itemAlias = 'i', $requestAlias = 'br')
+{
+    if (is_admin_user()) {
+        return ['1=1', []];
+    }
+
+    $officialId = current_official_id();
+    if ($officialId === '') {
+        return ['1=0', []];
+    }
+
+    return [
+        "COALESCE({$requestAlias}.owner_official_id, {$itemAlias}.received_by_official_id) = ?",
+        [$officialId],
+    ];
+}
+
+function transaction_owner_filter_sql($itemAlias = 'i', $requestAlias = 'br')
+{
+    if (is_admin_user()) {
+        return ['1=1', []];
+    }
+
+    $officialId = current_official_id();
+    if ($officialId === '') {
+        return ['1=0', []];
+    }
+
+    return [
+        "COALESCE({$requestAlias}.owner_official_id, {$itemAlias}.received_by_official_id) = ?",
+        [$officialId],
+    ];
+}
+
 function require_user_role_manager()
 {
     require_login();
@@ -415,7 +706,7 @@ function require_borrower()
 {
     require_login();
 
-    if (($_SESSION['role'] ?? '') !== 'student') {
+    if (!can_borrow_equipment($_SESSION['role'] ?? '')) {
         redirect_to('../pages/admin-dashboard.php', ['error' => 'not_allowed']);
     }
 }
@@ -773,6 +1064,29 @@ function require_existing_position_code(PDO $pdo, $positionCode, $positionName =
     throw new InvalidArgumentException('Please choose a valid faculty position.');
 }
 
+function require_existing_owner_official_id(PDO $pdo, $officialId)
+{
+    $officialId = substr(compact_spaces($officialId), 0, 50);
+    if ($officialId === '') {
+        throw new InvalidArgumentException('Please choose an item owner.');
+    }
+
+    $stmt = db_exec(
+        $pdo,
+        'SELECT o.official_id
+         FROM officials_masterlist o
+         WHERE o.official_id = ?
+         LIMIT 1',
+        [$officialId]
+    );
+
+    if ($stmt->fetch()) {
+        return $officialId;
+    }
+
+    throw new InvalidArgumentException('Please choose a valid official owner.');
+}
+
 function next_student_id(PDO $pdo, $preferred = null)
 {
     if ($preferred && $preferred > 0) {
@@ -890,7 +1204,7 @@ function ensure_user_for_student(PDO $pdo, $studentId, $firstName, $lastName, $c
         db_exec(
             $pdo,
             'UPDATE users
-             SET username = ?, student_id = ?, official_id = NULL, is_active = ?
+             SET username = ?, student_id = ?, official_id = NULL, is_active = ?, approval_status = "approved"
              WHERE user_id = ?',
             [$username, $studentId, (int) $isActive, $user['user_id']]
         );
@@ -899,8 +1213,8 @@ function ensure_user_for_student(PDO $pdo, $studentId, $firstName, $lastName, $c
 
     db_exec(
         $pdo,
-        'INSERT INTO users (student_id, official_id, username, password, role, is_default_password, is_active)
-         VALUES (?, NULL, ?, ?, ?, 1, ?)',
+        'INSERT INTO users (student_id, official_id, username, password, role, is_default_password, is_active, approval_status)
+         VALUES (?, NULL, ?, ?, ?, 1, ?, "approved")',
         [
             $studentId,
             $username,
@@ -948,7 +1262,7 @@ function ensure_user_for_official(PDO $pdo, $officialId, $firstName, $lastName, 
         db_exec(
             $pdo,
             'UPDATE users
-             SET username = ?, official_id = ?, role = ?, is_active = ?
+             SET username = ?, official_id = ?, role = ?, is_active = ?, approval_status = "approved"
              WHERE user_id = ?',
             [$officialId, $officialId, $role, (int) $isActive, $user['user_id']]
         );
@@ -957,8 +1271,8 @@ function ensure_user_for_official(PDO $pdo, $officialId, $firstName, $lastName, 
 
     db_exec(
         $pdo,
-        'INSERT INTO users (student_id, official_id, username, password, role, is_default_password, is_active)
-         VALUES (NULL, ?, ?, ?, ?, 1, ?)',
+        'INSERT INTO users (student_id, official_id, username, password, role, is_default_password, is_active, approval_status)
+         VALUES (NULL, ?, ?, ?, ?, 1, ?, "approved")',
         [
             $officialId,
             $officialId,
@@ -1002,8 +1316,8 @@ function create_manual_user(PDO $pdo, $identifier, $firstName, $lastName, $role,
 
         db_exec(
             $pdo,
-            'INSERT INTO users (student_id, official_id, username, password, role, is_default_password, is_active)
-             VALUES (?, NULL, ?, ?, "student", 1, ?)',
+            'INSERT INTO users (student_id, official_id, username, password, role, is_default_password, is_active, approval_status)
+             VALUES (?, NULL, ?, ?, "student", 1, ?, "approved")',
             [$studentId, $identifier, password_hash($password ?: default_account_password($identifier, $lastName), PASSWORD_DEFAULT), (int) $isActive]
         );
         $userId = (int) $pdo->lastInsertId();
@@ -1014,6 +1328,93 @@ function create_manual_user(PDO $pdo, $identifier, $firstName, $lastName, $role,
 
     $positionCode = get_or_create_position($pdo, $role === 'admin' ? 'Administrator' : 'Faculty');
     return ensure_user_for_official($pdo, $identifier, $firstName, $lastName, $positionCode, $password, $role, $isActive);
+}
+
+function create_pending_user_registration(PDO $pdo, $identifier, $firstName, $lastName, $role, $password)
+{
+    $identifier = compact_spaces($identifier);
+    $firstName = substr(compact_spaces($firstName), 0, 100);
+    $lastName = substr(compact_spaces($lastName), 0, 255);
+    $role = db_role($role);
+    $password = (string) $password;
+
+    if ($identifier === '' || $firstName === '' || $lastName === '' || $password === '') {
+        throw new InvalidArgumentException('missing');
+    }
+
+    if (strlen($password) < 6) {
+        throw new InvalidArgumentException('weak_password');
+    }
+
+    if ($role === 'admin') {
+        $role = 'faculty';
+    }
+
+    if ($role === 'student') {
+        $studentId = require_positive_int($identifier, 'Student ID');
+
+        $stmt = db_exec(
+            $pdo,
+            'SELECT user_id FROM users WHERE username = ? OR student_id = ? LIMIT 1',
+            [$identifier, $studentId]
+        );
+        if ($stmt->fetch()) {
+            throw new RuntimeException('duplicate');
+        }
+
+        $stmt = db_exec($pdo, 'SELECT student_id FROM master_list WHERE student_id = ? LIMIT 1', [$studentId]);
+        $isMasterlisted = (bool) $stmt->fetch();
+        if (!$isMasterlisted) {
+            save_master_record($pdo, $studentId, $firstName, $lastName);
+        }
+
+        db_exec(
+            $pdo,
+            'INSERT INTO users (student_id, official_id, username, password, role, is_default_password, is_active, approval_status)
+             VALUES (?, NULL, ?, ?, "student", 0, ?, ?)',
+            [
+                $studentId,
+                $identifier,
+                password_hash($password, PASSWORD_DEFAULT),
+                $isMasterlisted ? 1 : 0,
+                $isMasterlisted ? 'approved' : 'pending',
+            ]
+        );
+    } else {
+        $stmt = db_exec(
+            $pdo,
+            'SELECT user_id FROM users WHERE username = ? OR official_id = ? LIMIT 1',
+            [$identifier, $identifier]
+        );
+        if ($stmt->fetch()) {
+            throw new RuntimeException('duplicate');
+        }
+
+        $stmt = db_exec($pdo, 'SELECT official_id FROM officials_masterlist WHERE official_id = ? LIMIT 1', [$identifier]);
+        $isMasterlisted = (bool) $stmt->fetch();
+        if (!$isMasterlisted) {
+            $positionCode = get_or_create_position($pdo, 'Faculty');
+            save_official_record($pdo, $identifier, $firstName, $lastName, $positionCode);
+        }
+
+        db_exec(
+            $pdo,
+            'INSERT INTO users (student_id, official_id, username, password, role, is_default_password, is_active, approval_status)
+             VALUES (NULL, ?, ?, ?, "faculty", 0, ?, ?)',
+            [
+                $identifier,
+                $identifier,
+                password_hash($password, PASSWORD_DEFAULT),
+                $isMasterlisted ? 1 : 0,
+                $isMasterlisted ? 'approved' : 'pending',
+            ]
+        );
+    }
+
+    $userId = (int) $pdo->lastInsertId();
+    log_audit($pdo, 'user_registration_create', 'users', $userId, ['username' => $identifier, 'role' => $role]);
+
+    return $userId;
 }
 
 function inventory_stock_status($availableQuantity, $threshold = 5)
@@ -1053,6 +1454,170 @@ function item_dependency_count(PDO $pdo, $itemId)
          WHERE item_id = ? AND status <> "RETURNED"',
         [$itemId]
     )->fetchColumn();
+}
+
+function release_future_appointment_stock(PDO $pdo)
+{
+    if ($pdo->inTransaction() || !table_exists($pdo, 'transactions') || !table_exists($pdo, 'borrow_request') || !table_exists($pdo, 'borrow_appointments')) {
+        return;
+    }
+
+    $rows = db_exec(
+        $pdo,
+        'SELECT t.transaction_id
+         FROM transactions t
+         JOIN borrow_request br ON br.request_id = t.request_id
+         JOIN borrow_appointments ba ON ba.request_id = br.request_id
+         WHERE t.status <> "RETURNED"
+            AND t.borrow_date > CURDATE()
+            AND br.status = "APPROVED"
+            AND ba.status = "SCHEDULED"
+         ORDER BY t.borrow_date, t.transaction_id
+         LIMIT 50'
+    )->fetchAll();
+
+    foreach ($rows as $row) {
+        try {
+            $pdo->beginTransaction();
+            $stmt = db_exec(
+                $pdo,
+                'SELECT t.transaction_id,
+                        t.item_id,
+                        t.quantity_borrowed,
+                        i.total_quantity,
+                        i.available_quantity,
+                        i.min_quantity_alert
+                 FROM transactions t
+                 JOIN borrow_request br ON br.request_id = t.request_id
+                 JOIN borrow_appointments ba ON ba.request_id = br.request_id
+                 JOIN items i ON i.item_id = t.item_id
+                 WHERE t.transaction_id = ?
+                    AND t.status <> "RETURNED"
+                    AND t.borrow_date > CURDATE()
+                    AND br.status = "APPROVED"
+                    AND ba.status = "SCHEDULED"
+                 FOR UPDATE',
+                [$row['transaction_id']]
+            );
+            $transaction = $stmt->fetch();
+
+            if ($transaction) {
+                $newAvailable = min(
+                    (int) $transaction['total_quantity'],
+                    (int) $transaction['available_quantity'] + (int) $transaction['quantity_borrowed']
+                );
+                $stockStatus = inventory_stock_status($newAvailable, (int) $transaction['min_quantity_alert']);
+
+                db_exec($pdo, 'DELETE FROM transactions WHERE transaction_id = ?', [$transaction['transaction_id']]);
+                db_exec(
+                    $pdo,
+                    'UPDATE items SET available_quantity = ?, stock_status = ? WHERE item_id = ?',
+                    [$newAvailable, $stockStatus, $transaction['item_id']]
+                );
+            }
+
+            $pdo->commit();
+        } catch (Throwable $error) {
+            rollback_if_active($pdo);
+            log_internal_error('release_future_appointment_stock', $error);
+        }
+    }
+}
+
+function activate_due_borrow_appointments(PDO $pdo)
+{
+    if ($pdo->inTransaction() || !table_exists($pdo, 'transactions') || !table_exists($pdo, 'borrow_request') || !table_exists($pdo, 'borrow_appointments')) {
+        return;
+    }
+
+    $rows = db_exec(
+        $pdo,
+        'SELECT ba.appointment_id
+         FROM borrow_appointments ba
+         JOIN borrow_request br ON br.request_id = ba.request_id
+         WHERE ba.status = "SCHEDULED"
+            AND ba.appointment_date <= CURDATE()
+            AND br.status = "APPROVED"
+            AND NOT EXISTS (
+                SELECT 1
+                FROM transactions t
+                WHERE t.request_id = ba.request_id
+            )
+         ORDER BY ba.appointment_date, ba.appointment_id
+         LIMIT 50'
+    )->fetchAll();
+
+    foreach ($rows as $row) {
+        try {
+            $pdo->beginTransaction();
+            $stmt = db_exec(
+                $pdo,
+                'SELECT ba.appointment_id,
+                        ba.appointment_end_date,
+                        br.request_id,
+                        br.student_id,
+                        br.borrower_user_id,
+                        br.item_id,
+                        br.quantity_requested,
+                        br.request_date,
+                        br.status AS request_status,
+                        i.status AS item_status,
+                        i.available_quantity,
+                        i.min_quantity_alert
+                 FROM borrow_appointments ba
+                 JOIN borrow_request br ON br.request_id = ba.request_id
+                 JOIN items i ON i.item_id = br.item_id
+                 WHERE ba.appointment_id = ?
+                    AND ba.status = "SCHEDULED"
+                    AND ba.appointment_date <= CURDATE()
+                    AND br.status = "APPROVED"
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM transactions t
+                        WHERE t.request_id = ba.request_id
+                    )
+                 FOR UPDATE',
+                [$row['appointment_id']]
+            );
+            $request = $stmt->fetch();
+
+            if ($request && $request['item_status'] === 'active' && (int) $request['quantity_requested'] <= (int) $request['available_quantity']) {
+                db_exec(
+                    $pdo,
+                    'INSERT INTO transactions
+                        (request_id, student_id, borrower_user_id, item_id, quantity_borrowed, borrow_date, expected_return_date, status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, "ONGOING")',
+                    [
+                        $request['request_id'],
+                        $request['student_id'],
+                        $request['borrower_user_id'],
+                        $request['item_id'],
+                        $request['quantity_requested'],
+                        $request['request_date'],
+                        $request['appointment_end_date'],
+                    ]
+                );
+
+                $remainingQuantity = (int) $request['available_quantity'] - (int) $request['quantity_requested'];
+                $stockStatus = inventory_stock_status($remainingQuantity, (int) $request['min_quantity_alert']);
+                db_exec(
+                    $pdo,
+                    'UPDATE items SET available_quantity = available_quantity - ?, stock_status = ? WHERE item_id = ? AND available_quantity >= ?',
+                    [
+                        $request['quantity_requested'],
+                        $stockStatus,
+                        $request['item_id'],
+                        $request['quantity_requested'],
+                    ]
+                );
+            }
+
+            $pdo->commit();
+        } catch (Throwable $error) {
+            rollback_if_active($pdo);
+            log_internal_error('activate_due_borrow_appointments', $error);
+        }
+    }
 }
 
 function password_matches($plain, $stored)

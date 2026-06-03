@@ -59,10 +59,12 @@ function csv_validate_headers($dataset, array $headers)
         'equipment' => [
             ['item_name', 'equipment_name', 'name'],
             ['quantity', 'qty'],
+            ['owner_official_id', 'owner_id', 'official_id', 'received_by_official_id', 'owner'],
         ],
         'materials' => [
             ['item_name', 'material_name', 'name'],
             ['quantity', 'qty'],
+            ['owner_official_id', 'owner_id', 'official_id', 'received_by_official_id', 'owner'],
         ],
     ];
 
@@ -148,6 +150,11 @@ function save_item_csv_row(PDO $pdo, array $row, array $headers, $dataset)
     $quantity = require_non_negative_int(csv_value($row, $headers, ['quantity', 'qty']), 'Quantity');
     $description = csv_value($row, $headers, ['description']);
     $dateAdded = normalized_date_or_today(csv_value($row, $headers, ['date_added']));
+    $ownerOfficialId = require_existing_owner_official_id(
+        $pdo,
+        csv_value($row, $headers, ['owner_official_id', 'owner_id', 'official_id', 'received_by_official_id', 'owner'])
+    );
+    $actorUserId = (int) ($_SESSION['user_id'] ?? 0);
 
     assert_item_not_duplicate($pdo, $itemName, $categoryId);
 
@@ -167,13 +174,13 @@ function save_item_csv_row(PDO $pdo, array $row, array $headers, $dataset)
     db_exec(
         $pdo,
         'INSERT INTO items
-            (item_name, description, unit_id, category_id, total_quantity, available_quantity, date_added, status, stock_status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, "active", ?)',
-        [$itemName, $description, $unitId, $categoryId, $quantity, $quantity, $dateAdded, $stockStatus]
+            (item_name, description, unit_id, category_id, total_quantity, available_quantity, received_by_official_id, created_by_user_id, updated_by_user_id, date_added, status, stock_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "active", ?)',
+        [$itemName, $description, $unitId, $categoryId, $quantity, $quantity, $ownerOfficialId, $actorUserId, $actorUserId, $dateAdded, $stockStatus]
     );
 
     $itemId = (int) $pdo->lastInsertId();
-    log_audit($pdo, 'item_import_row', 'items', $itemId, ['item_name' => $itemName, 'dataset' => $dataset]);
+    log_audit($pdo, 'item_import_row', 'items', $itemId, ['item_name' => $itemName, 'dataset' => $dataset, 'owner_official_id' => $ownerOfficialId]);
 }
 
 function import_csv(PDO $pdo, $dataset, $filePath, $mode = 'safe')
@@ -279,31 +286,6 @@ function import_csv(PDO $pdo, $dataset, $filePath, $mode = 'safe')
     return $summary;
 }
 
-function update_settings_user_role(PDO $pdo, $userId, $username, $newRole)
-{
-    $role = strtolower(clean($newRole)) === 'revoke' ? 'student' : db_role($newRole);
-
-    if ($userId > 0) {
-        $stmt = db_exec($pdo, 'SELECT user_id, role FROM users WHERE user_id = ? FOR UPDATE', [$userId]);
-    } else {
-        $stmt = db_exec($pdo, 'SELECT user_id, role FROM users WHERE username = ? FOR UPDATE', [$username]);
-    }
-
-    $user = $stmt->fetch();
-    if (!$user) {
-        throw new RuntimeException('User not found.');
-    }
-
-    db_exec($pdo, 'UPDATE users SET role = ?, is_active = 1 WHERE user_id = ?', [$role, $user['user_id']]);
-    log_audit(
-        $pdo,
-        'user_role_update',
-        'users',
-        $user['user_id'],
-        ['old_role' => $user['role'], 'new_role' => $role]
-    );
-}
-
 $settingsAction = '';
 
 try {
@@ -311,8 +293,6 @@ try {
     if ($settingsAction === '') {
         if (isset($_FILES['csv_file'])) {
             $settingsAction = 'import_csv';
-        } elseif (post_value('new_role') !== '' || post_value('user_id') !== '' || post_value('username') !== '') {
-            $settingsAction = 'update_role';
         }
     }
 
@@ -377,31 +357,11 @@ try {
         );
     }
 
-    if ($settingsAction !== 'update_role') {
-        respond_error('../pages/admin-settings.php', 'invalid_action', 'The submitted settings action was not recognized.', 400, ['section' => 'roles']);
-    }
-
-    $userId = (int) post_value('user_id');
-    $username = post_value('username');
-    $newRole = post_value('new_role');
-
-    if (!can_manage_user_roles($_SESSION['role'] ?? '')) {
-        respond_error('../pages/admin-settings.php', 'not_allowed', 'Only administrators can change user roles.', 400, ['section' => 'roles']);
-    }
-
-    if ($newRole === '' || ($userId <= 0 && $username === '')) {
-        respond_error('../pages/admin-settings.php', 'missing', 'User and role are required.', 400, ['section' => 'roles']);
-    }
-
-    $pdo->beginTransaction();
-    update_settings_user_role($pdo, $userId, $username, $newRole);
-    $pdo->commit();
-
-    respond_success('../pages/admin-settings.php', 'role_updated');
+    respond_error('../pages/admin-settings.php', 'invalid_action', 'The submitted settings action was not recognized.');
 } catch (Throwable $error) {
     rollback_if_active($pdo);
     log_internal_error('admin_settings', $error);
-    $section = 'roles';
+    $section = '';
     if ($settingsAction === 'import_csv') {
         $section = 'csv';
     } elseif ($settingsAction === 'save_notes') {
